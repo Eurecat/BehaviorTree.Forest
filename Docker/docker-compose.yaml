@@ -1,0 +1,31 @@
+version: "2.2"
+
+services:
+  eut_bt_forest_ws:
+    container_name: "eut_bt_forest_ws"
+    network_mode: host 
+    #runtime: nvidia
+    image: eut_bt_forest_ws:humble
+    privileged: true
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ~/.xauth_docker/share/:/tmp/xauth/
+      - ./.vscode:/eut_bt_forest_ws/.vscode
+      - ../behaviortree_forest:/eut_bt_forest_ws/src/behaviortree_forest
+      - ../behaviortree_forest_interfaces:/eut_bt_forest_ws/src/behaviortree_forest_interfaces
+      - ./depend/behavior_tree_ros/behaviortree_ros2:/eut_bt_forest_ws/src/behaviortree_ros2
+      - ./depend/behavior_tree_ros/btcpp_ros2_interfaces:/eut_bt_forest_ws/src/btcpp_ros2_interfaces
+      - ./depend/behavior_tree_ros/btcpp_ros2_samples:/eut_bt_forest_ws/src/btcpp_ros2_samples
+      - ./depend/groot:/eut_bt_forest_ws/src/groot
+      - ./depend/behavior_tree_eut_plugins:/eut_bt_forest_ws/src/behavior_tree_eut_plugins
+    tty: true
+    stdin_open: true
+    environment:
+     # - NVIDIA_VISIBLE_DEVICES=all 
+      - DISPLAY=$DISPLAY
+      - QT_X11_NO_MITSHM=1
+      - XAUTHORITY=/tmp/xauth/.docker.xauth     
+    devices:
+      - /dev/dri:/dev/dri
+      - /dev/snd:/dev/snd
+    # command: bash -c ""

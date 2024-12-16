@@ -1,0 +1,8 @@
+string tree_file
+bool debug
+bool auto_restart
+uint32 publisher_port
+uint32 server_port
+string[] bb_init_files
+---
+uint8 tree_uid

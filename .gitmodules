@@ -1,0 +1,12 @@
+[submodule "Docker/depend/behavior_tree_eut_plugins"]
+	path = Docker/depend/behavior_tree_eut_plugins
+	url = git@gitlab.local.eurecat.org:robotics-automation/behavior_tree_eut_plugins.git
+	branch = humble
+[submodule "Docker/depend/groot"]
+	path = Docker/depend/groot
+	url = git@gitlab.local.eurecat.org:robotics-automation/groot.git
+	branch = humble
+[submodule "Docker/depend/behavior_tree_ros"]
+	path = Docker/depend/behavior_tree_ros
+	url = git@gitlab.local.eurecat.org:robotics-automation/behavior_tree_ros.git
+	branch = humble

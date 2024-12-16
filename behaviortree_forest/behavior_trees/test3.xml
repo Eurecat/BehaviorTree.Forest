@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<root BTCPP_format="4" main_tree_to_execute="BehaviorTree">
+    <!-- ////////// -->
+    <BehaviorTree ID="BehaviorTree">
+        <Repeat num_cycles="-1">
+            <WaitValueUpdate entry="${in_switch}">
+                <Switch2 case_1="0" case_2="1" variable="${in_switch}">
+                    <AlwaysSuccess/>
+                    <AlwaysFailure/>
+                    <AlwaysFailure/>
+                </Switch2>
+            </WaitValueUpdate>
+        </Repeat>
+    </BehaviorTree>
+    <!-- ////////// -->
+    <TreeNodesModel/>
+    <!-- ////////// -->
+</root>

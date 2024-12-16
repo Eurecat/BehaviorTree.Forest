@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<root BTCPP_format="4" main_tree_to_execute="BehaviorTree">
+    <!-- ////////// -->
+    <BehaviorTree ID="BehaviorTree">
+        <Sequence>
+            <SetBlackboard output_key="max" value="10"/>
+            <SetBlackboard output_key="gen_num" value="false"/>
+            <SetBlackboard output_key="rnd" value="0"/>
+            <SetBlackboard output_key="target_num" value="-1"/>
+            <Loop>
+                <Sequence>
+                    <CheckBool input="${gen_num}"/>
+                    <WaitMilliseconds duration="500"/>
+                    <RandomInteger max="${max}" min="0" result="${rnd}"/>
+                    <BlackboardCheckInt return_on_mismatch="FAILURE" value_A="${rnd}" value_B="${target_num}">
+                        <SetBlackboard output_key="gen_num" value="false"/>
+                    </BlackboardCheckInt>
+                </Sequence>
+            </Loop>
+        </Sequence>
+    </BehaviorTree>
+    <!-- ////////// -->
+    <TreeNodesModel>
+        <SubTree ID="BehaviorTree" description=""/>
+    </TreeNodesModel>
+    <!-- ////////// -->
+</root>

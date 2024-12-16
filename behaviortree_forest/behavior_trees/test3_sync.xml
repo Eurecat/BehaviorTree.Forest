@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<root BTCPP_format="4" main_tree_to_execute="BehaviorTree">
+    <!-- ////////// -->
+    <BehaviorTree ID="BehaviorTree">
+        <Repeat num_cycles="-1">
+            <Sequence>
+                <Sleep msec="1000"/>
+                <SetBlackboard output_key="in_switch" value="0"/>
+                <Sleep msec="1000"/>
+                <SetBlackboard output_key="in_switch" value="1"/>
+                <WasEntryUpdated entry="${in_switch}"/>
+            </Sequence>
+        </Repeat>
+    </BehaviorTree>
+    <!-- ////////// -->
+    <TreeNodesModel>
+        <SubTree ID="BehaviorTree" description=""/>
+    </TreeNodesModel>
+    <!-- ////////// -->
+</root>
