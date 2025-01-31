@@ -1,15 +1,15 @@
 behaviortree_node:
   ros__parameters:
-    trees_folder: "behavior_server"
+    trees_folder: "/eut_bt_forest_ws/src/behaviortree_forest/behavior_trees"
     enable_cout_log: true
     enable_minitrace_log: true # Optional (defaults to 1667)
     enable_rostopic_log: true  # Optional (defaults 1000 ms)
     enable_zmq_log: true
-    tree_name: "test_name"
-    tree_file: "test.xml"
-    tree_uid: "2"
-    tree_debug: false
+    tree_name: "test3_sync"
+    tree_file: "test3_sync.xml"
+    tree_uid: 2
+    tree_debug: true
     tree_auto_restart: false
-    server_port: 1667
+    # publisher_port: 1666
+    # server_port: 1667
     log_folder: "/tmp/"
-    bb_init: ""

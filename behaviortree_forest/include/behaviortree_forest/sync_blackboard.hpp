@@ -1,6 +1,7 @@
  
 #ifndef SYNC_BB_HPP
 #define SYNC_BB_HPP
+
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -72,7 +73,7 @@ namespace BT_SERVER
       return {};
     }
 
-    /**
+  /**
    * Replace every key reference with its string value, throws if even one referenced key does not exist
   */
   inline BT::Expected<std::string> replaceKeysWithStringValues(const std::string& boosted_key, BT::Blackboard::Ptr bb_ptr, const bool check_strict = false, const bool fail_with_invalid_reference = false)

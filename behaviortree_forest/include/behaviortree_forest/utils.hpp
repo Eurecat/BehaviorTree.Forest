@@ -9,10 +9,12 @@
 #include "behaviortree_cpp/blackboard.h"
 #include "behaviortree_cpp/bt_factory.h"
 
-inline std::string const boolToString(bool b)
-{
-  return b ? "true" : "false";
-}
+
+// ASK DAVID why this?
+// inline std::string const boolToString(bool b)
+// {
+//   return b ? "true" : "false";
+// }
 
 inline std::string getTreeFullPath(const std::string& _file, const std::string& trees_folder_)
 {
@@ -31,6 +33,7 @@ inline std::string getTreeFullPath(const std::string& _file, const std::string& 
     return full_name;
 }
 
+// ASK DAVID and check in the library if there is no already this function...
 inline bool loadXMLToString(const std::string& filename, std::string& output) 
 {
     // Open the file

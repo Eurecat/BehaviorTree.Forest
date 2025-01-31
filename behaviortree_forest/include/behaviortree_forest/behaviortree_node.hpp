@@ -3,8 +3,8 @@
 
 #include "rclcpp/rclcpp.hpp"
 
-#include "utils.hpp"
-#include "tree_wrapper.hpp"
+#include "behaviortree_forest/utils.hpp"
+#include "behaviortree_forest/tree_wrapper.hpp"
 
 #include "std_srvs/srv/empty.hpp"
 #include "std_srvs/srv/trigger.hpp"
@@ -32,9 +32,10 @@ namespace BT_SERVER
     public:
       BehaviorTreeNode(const rclcpp::Node::SharedPtr& node);
       ~BehaviorTreeNode() = default;
-      void loop();
-      uint loop_rate_ = 30;
+      void loopStep();
 
+      void run();
+      
     private:
       void sendBlackboardUpdates(const SyncMap& entries_map);
       void getBlackboardUpdates();
@@ -55,12 +56,17 @@ namespace BT_SERVER
       void getParameters (rclcpp::Node::SharedPtr nh);
 
       rclcpp::Node::SharedPtr node_ ;
+      rclcpp::executors::MultiThreadedExecutor executor_;
+      rclcpp::CallbackGroup::SharedPtr srv_cb_group_;
+      
       TreeWrapper tree_wrapper_;
       std::string trees_folder_;
       std::string tree_name_;
 
       bool tree_debug_;
       bool tree_auto_restart_;
+
+      uint loop_rate_ = 30;
 
       //Services
       rclcpp::Service<GetLoadedPluginsSrv>::SharedPtr get_loaded_plugins_srv_;
@@ -79,7 +85,7 @@ namespace BT_SERVER
 
       //Timers
       rclcpp::TimerBase::SharedPtr check_paused_timer_; 
-      rclcpp::Rate rate;
+      rclcpp::TimerBase::SharedPtr loop_timer_; 
   };
 }
 

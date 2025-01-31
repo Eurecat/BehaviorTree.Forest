@@ -5,7 +5,7 @@ services:
     container_name: "eut_bt_forest_ws"
     network_mode: host 
     #runtime: nvidia
-    image: eut_bt_forest_ws:humble
+    image: eut_bt_ros2:humble
     privileged: true
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
@@ -13,11 +13,11 @@ services:
       - ./.vscode:/eut_bt_forest_ws/.vscode
       - ../behaviortree_forest:/eut_bt_forest_ws/src/behaviortree_forest
       - ../behaviortree_forest_interfaces:/eut_bt_forest_ws/src/behaviortree_forest_interfaces
-      - ./depend/behavior_tree_ros/behaviortree_ros2:/eut_bt_forest_ws/src/behaviortree_ros2
-      - ./depend/behavior_tree_ros/btcpp_ros2_interfaces:/eut_bt_forest_ws/src/btcpp_ros2_interfaces
-      - ./depend/behavior_tree_ros/btcpp_ros2_samples:/eut_bt_forest_ws/src/btcpp_ros2_samples
-      - ./depend/groot:/eut_bt_forest_ws/src/groot
-      - ./depend/behavior_tree_eut_plugins:/eut_bt_forest_ws/src/behavior_tree_eut_plugins
+      - ../../behavior_tree_ros/behaviortree_ros2:/eut_bt_forest_ws/src/behaviortree_ros2
+      - ../../behavior_tree_ros/btcpp_ros2_interfaces:/eut_bt_forest_ws/src/btcpp_ros2_interfaces
+      - ../../behavior_tree_ros/btcpp_ros2_samples:/eut_bt_forest_ws/src/btcpp_ros2_samples
+      - ../../groot:/eut_bt_forest_ws/src/groot
+      - ../../behavior_tree_eut_plugins:/eut_bt_forest_ws/src/behavior_tree_eut_plugins
     tty: true
     stdin_open: true
     environment:

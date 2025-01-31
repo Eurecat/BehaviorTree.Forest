@@ -1,5 +1,5 @@
 
-#include "behaviortree_server.hpp"
+#include "behaviortree_forest/behaviortree_server.hpp"
 
 namespace BT_SERVER
 {
@@ -7,7 +7,6 @@ namespace BT_SERVER
   {
     //Add nh to executor
     executor_.add_node(node_);
-    srv_cb_group_ = node_->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
 
     //Create Services:
     load_tree_srv_ = node_->create_service<LoadTreeSrv>("behavior_tree_forest/load_tree",std::bind(&BehaviorTreeServer::loadTreeCB,this,_1,_2));
@@ -32,12 +31,15 @@ namespace BT_SERVER
     
     //Updates republisher for all trees (put latch to true atm, because seems a good option that you receive last update from the server)
     sync_bb_pub_ = node_->create_publisher<BBEntry>("behavior_tree_forest/broadcast_update", 10);
+
+
+    RCLCPP_INFO(node_->get_logger(), "BehaviorTreeServer with name %s up and running", this->node_->get_name());
   }
   
   BehaviorTreeServer::~BehaviorTreeServer() 
   {
     RCLCPP_INFO(node_->get_logger(), "Calling destructor");
-    killAllTreesCB(std::make_shared <EmptySrv::Request>(),std::make_shared <EmptySrv::Response>());
+    killAllTrees(true);//force kill them all
   }
 
   void BehaviorTreeServer::syncBBCB(const BBEntry::SharedPtr msg) const
@@ -161,8 +163,8 @@ namespace BT_SERVER
     std::string param_name = "tree_name:="+tree_name;
     std::string param_file = "tree_file:="+req->tree_file;
     std::string param_uid = "tree_uid:="+std::to_string(trees_UID_);
-    std::string param_auto_restart = "tree_auto_restart:="+boolToString(req->auto_restart);
-    std::string param_debug ="tree_debug:="+boolToString(req->debug);
+    std::string param_auto_restart = "tree_auto_restart:="+BT::toStr(req->auto_restart);
+    std::string param_debug ="tree_debug:="+BT::toStr(req->debug);
 
     std::string param_bb_init = "tree_bb_init:=\\'";
     if (req->bb_init_files.size()> 0)
@@ -229,81 +231,23 @@ namespace BT_SERVER
     return true;
   }
 
-  bool BehaviorTreeServer::handleCallEmptySrv(rclcpp::Client<EmptySrv>::SharedPtr service_client)
+  bool BehaviorTreeServer::handleCallEmptySrv(const std::string& service_name)
   {
     RCLCPP_INFO(node_->get_logger(), "handleCallEmptySrv START");
-
-    // Create the request for the Empty service you want to call
-    auto empty_request = std::make_shared<std_srvs::srv::Empty::Request>();
-
-    // Send the request asynchronously and get the FutureAndRequestId
-    //auto future_response = service_client->async_send_request(empty_request);
-    auto future = service_client->async_send_request(empty_request, std::bind(&BehaviorTreeServer::emptySrvCB, this, std::placeholders::_1));
+    const auto response = handleSyncSrvCall<EmptySrv>(service_name);
     RCLCPP_INFO(node_->get_logger(), "handleCallEmptySrv END");
 
-    return true; // Indicate that the service was received
+    return response.second == rclcpp::FutureReturnCode::SUCCESS; // Indicate that the service was received
   }
 
-  void BehaviorTreeServer::emptySrvCB(rclcpp::Client<std_srvs::srv::Empty>::SharedFuture future)
+  bool BehaviorTreeServer::handleCallTriggerSrv(const std::string& service_name)
   {
-      RCLCPP_INFO(node_->get_logger(), "emptySrvCB");
-      try {
-          auto response = future.get();  // This will block until the response is received
-          //RCLCPP_INFO(node_->get_logger(), "Empty Service Responded");
-      } catch (const std::exception &e) {
-          RCLCPP_ERROR(node_->get_logger(), "Empty Service call failed: %s", e.what());
-      }
-  }
-  void BehaviorTreeServer::triggerSrvCB(rclcpp::Client<std_srvs::srv::Trigger>::SharedFuture future)
-  {
-      RCLCPP_INFO(node_->get_logger(), "triggerSrvCB");
-      try {
-          auto response = future.get();  // This will block until the response is received
-          //RCLCPP_INFO(node_->get_logger(), "Empty Service Responded");
-      } catch (const std::exception &e) {
-          RCLCPP_ERROR(node_->get_logger(), "Trigger Service call failed: %s", e.what());
-      }
-  }
+    RCLCPP_INFO(node_->get_logger(), "handleCallTriggerSrv START");
+    const auto response = handleSyncSrvCall<TriggerSrv>(service_name);
+    bool success = response.second == rclcpp::FutureReturnCode::SUCCESS && response.first->success; // Indicate that the service was received and processed successfully
+    RCLCPP_INFO(node_->get_logger(), "handleCallTriggerSrv END");
 
-  bool BehaviorTreeServer::rosServiceKillCall (std::string tree_name)
-  {
-    if (rclcpp::ok())
-    {
-      kill_service_client_ = node_->create_client<EmptySrv>("/"+tree_name+ "/kill_tree"); 
-      if (!kill_service_client_->service_is_ready()) 
-      {
-        RCLCPP_ERROR(node_->get_logger(), "Failed to Kill tree: Service %s does not exist", kill_service_client_->get_service_name());
-        return false;
-      }
-      return handleCallEmptySrv(kill_service_client_);
-    }
-    return true;
-  }
-
-  bool BehaviorTreeServer::rosServiceStopCall (std::string tree_name)
-  {
-    if (rclcpp::ok())
-    {
-      stop_service_client_ = node_->create_client<EmptySrv>("/"+tree_name+ "/stop_tree"); 
-      if (!stop_service_client_->service_is_ready()) 
-      {
-        RCLCPP_ERROR(node_->get_logger(), "Failed to Stop tree: Service %s does not exist", stop_service_client_->get_service_name());
-        return false;
-      }
-      return handleCallEmptySrv(stop_service_client_);
-    }
-    return true;
-  }
-
-  bool BehaviorTreeServer::rosServiceRestartCall (std::string tree_name)
-  {
-    restart_service_client_ = node_->create_client<EmptySrv>("/"+tree_name+ "/restart_tree");
-    if (!restart_service_client_->service_is_ready()) 
-    {
-      RCLCPP_ERROR(node_->get_logger(), "Failed to Restart tree: Service %s does not exist", restart_service_client_->get_service_name());
-      return false;
-    }
-    return handleCallEmptySrv(restart_service_client_);
+    return success; 
   }
 
   bool BehaviorTreeServer::stopTreeCB(const std::shared_ptr<TreeRequestSrv::Request> req, std::shared_ptr<TreeRequestSrv::Response> res)
@@ -312,7 +256,7 @@ namespace BT_SERVER
     if(uids_to_tree_info_.find(req->tree_uid) != uids_to_tree_info_.end())
     {
         TreeProcessInfo tree_info = uids_to_tree_info_.at(req->tree_uid);
-        bool result = rosServiceStopCall(tree_info.tree_name);
+        bool result = handleCallEmptySrv("/"+tree_info.tree_name+ "/stop_tree");
         RCLCPP_INFO(node_->get_logger(), "Stopping tree with UID: '%u' done ", req->tree_uid);
         return result;
     }
@@ -322,15 +266,17 @@ namespace BT_SERVER
     }
     return false;
   }
-  
-  bool BehaviorTreeServer::killTreeCB(const std::shared_ptr<TreeRequestSrv::Request> req, std::shared_ptr<TreeRequestSrv::Response> res)
+
+  bool BehaviorTreeServer::killTree(const uint8_t tree_uid, const bool force_kill)
   {
-    RCLCPP_INFO(node_->get_logger(), "Killing tree with UID: '%u' ", req->tree_uid);
-    if(uids_to_tree_info_.find(req->tree_uid) != uids_to_tree_info_.end())
+    if(uids_to_tree_info_.find(tree_uid) != uids_to_tree_info_.end())
     {
-        TreeProcessInfo tree_info = uids_to_tree_info_.at(req->tree_uid);
-        if (rosServiceKillCall(tree_info.tree_name))
+        TreeProcessInfo& tree_info = uids_to_tree_info_.at(tree_uid);
+        if (!tree_info.killed && handleCallEmptySrv("/"+tree_info.tree_name+ "/kill_tree") || force_kill)
         {
+          if(force_kill)
+            std::cout << "Force killing tree with uid " << std::to_string(tree_uid) << "\n" << std::flush;
+
           //Extract extra PIDs created when executing "ros2 run ..." with fork()
           pid_t bt_node_pid = ros2_launch_manager_.extract_bt_node_pid_from_python_pid(tree_info.pid);
           std::string command;
@@ -341,32 +287,39 @@ namespace BT_SERVER
 
           //RCLCPP_INFO(node_->get_logger(), "EXECUTING KILL COMMAND: %s", command.c_str());
           int resultcmd = system(command.c_str());
-          /*if (resultcmd != -1)
-            RCLCPP_INFO(node_->get_logger(), "Succesfully killed processes with PIDs: %s & %s",std::to_string(tree_info.pid).c_str(), std::to_string(bt_node_pid).c_str());
-          else
-            RCLCPP_ERROR(node_->get_logger(), "Failed to kill process with PIDs %s & %s",std::to_string(tree_info.pid).c_str(), std::to_string(bt_node_pid).c_str());
-          */
-          return true;
+          tree_info.killed = true;
+          // if (resultcmd != -1)
+          //   RCLCPP_INFO(node_->get_logger(), "Succesfully killed processes with PIDs: %s & %s",std::to_string(tree_info.pid).c_str(), std::to_string(bt_node_pid).c_str());
+          // else
+          //   RCLCPP_ERROR(node_->get_logger(), "Failed to kill process with PIDs %s & %s",std::to_string(tree_info.pid).c_str(), std::to_string(bt_node_pid).c_str());
+
+          return resultcmd != -1;
         }
     }
-    else
-    {
-        RCLCPP_ERROR(node_->get_logger(), "Failed to kill process: UID %u does not exist", req->tree_uid);
-    }
-
+    RCLCPP_ERROR(node_->get_logger(), "Failed to kill process: UID %u does not exist", tree_uid);
     return false;
+  }
+
+  bool BehaviorTreeServer::killAllTrees(const bool force_kill)
+  {
+    for (auto tree_info : uids_to_tree_info_)
+    {
+      if(!tree_info.second.killed)
+        killTree(tree_info.first, force_kill);
+    }
+    return true;
+  }
+  
+  bool BehaviorTreeServer::killTreeCB(const std::shared_ptr<TreeRequestSrv::Request> req, std::shared_ptr<TreeRequestSrv::Response> res)
+  {
+    RCLCPP_INFO(node_->get_logger(), "Killing tree with UID: '%u' ", req->tree_uid);
+    return killTree(req->tree_uid, false);
   }
 
   bool BehaviorTreeServer::killAllTreesCB(const std::shared_ptr<EmptySrv::Request> req, std::shared_ptr<EmptySrv::Response> res)
   {
     RCLCPP_INFO(node_->get_logger(), "Killing all trees");
-    for (auto tree_info : uids_to_tree_info_)
-    {
-        std::shared_ptr<TreeRequestSrv::Request> request = std::make_shared<TreeRequestSrv::Request>();
-        std::shared_ptr<TreeRequestSrv::Response> response;
-        request->tree_uid  = tree_info.first;
-        killTreeCB(request,response);
-    }
+    killAllTrees();
     return true;
   }
 
@@ -376,7 +329,7 @@ namespace BT_SERVER
     if(uids_to_tree_info_.find(req->tree_uid) != uids_to_tree_info_.end())
     {
         TreeProcessInfo tree_info = uids_to_tree_info_.at(req->tree_uid);
-        return rosServiceRestartCall(tree_info.tree_name);
+        return handleCallEmptySrv("/"+tree_info.tree_name+ "/restart_tree");
     }
     else
     {
@@ -391,18 +344,16 @@ namespace BT_SERVER
     if(uids_to_tree_info_.find(req->tree_uid) != uids_to_tree_info_.end())
     {
         TreeProcessInfo tree_info = uids_to_tree_info_.at(req->tree_uid);
-        pause_service_client_ = node_->create_client<TriggerSrv>("/"+tree_info.tree_name+ "/pause_tree"); 
-        if (!pause_service_client_->service_is_ready()) 
+        if(handleCallTriggerSrv("/"+tree_info.tree_name+ "/pause_tree"))
         {
-          RCLCPP_ERROR(node_->get_logger(), "Failed to Pause tree: Service %s does not exist", pause_service_client_->get_service_name());
-          return false;
+          RCLCPP_INFO(node_->get_logger(), "Paused tree with UID: '%u' done ", req->tree_uid);
+          return true;
         }
-        auto trigger_request = std::make_shared<TriggerSrv::Request>();
-        //service_client->async_send_request(trigger_request);
-        auto future = pause_service_client_->async_send_request(trigger_request, std::bind(&BehaviorTreeServer::triggerSrvCB, this, std::placeholders::_1));
-    
-        RCLCPP_INFO(node_->get_logger(), "Paused tree with UID: '%u' done ", req->tree_uid);
-        return true;
+        else
+        {
+          RCLCPP_ERROR(node_->get_logger(), "Failed to Pause with UID: '%u'. Service could not process the request", req->tree_uid);
+        }
+
     }
     else
     {
@@ -417,17 +368,15 @@ namespace BT_SERVER
     if(uids_to_tree_info_.find(req->tree_uid) != uids_to_tree_info_.end())
     {
         TreeProcessInfo tree_info = uids_to_tree_info_.at(req->tree_uid);
-        resume_service_client_ = node_->create_client<TriggerSrv>("/"+tree_info.tree_name+ "/resume_tree"); 
-        if (!resume_service_client_->service_is_ready()) 
+        if(handleCallTriggerSrv("/"+tree_info.tree_name+ "/resume_tree"))
         {
-          RCLCPP_ERROR(node_->get_logger(), "Failed to Pause tree: Service %s does not exist", resume_service_client_->get_service_name());
-          return false;
+          RCLCPP_INFO(node_->get_logger(), "Resumed tree with UID: '%u' done ", req->tree_uid);
+          return true;
         }
-        auto trigger_request = std::make_shared<TriggerSrv::Request>();
-        //service_client->async_send_request(trigger_request);
-        auto future = resume_service_client_->async_send_request(trigger_request, std::bind(&BehaviorTreeServer::triggerSrvCB, this, std::placeholders::_1));
-        RCLCPP_INFO(node_->get_logger(), "Resumed tree with UID: '%u' done ", req->tree_uid);
-        return true;
+        else
+        {
+          RCLCPP_ERROR(node_->get_logger(), "Failed to Resumed with UID: '%u'. Service could not process the request", req->tree_uid);
+        }
     }
     else
     {
@@ -543,12 +492,9 @@ int main(int argc, char** argv)
 
   auto bt_server = std::make_shared<BT_SERVER::BehaviorTreeServer>(nh);
 
- // Create a thread for running the multithreaded executor
-  std::thread executor_thread([bt_server]() {
-      bt_server->run();
-  });
-
-  executor_thread.join();
+  bt_server->run();
+  bt_server.reset();
+  
   rclcpp::shutdown();
 
   return 0;

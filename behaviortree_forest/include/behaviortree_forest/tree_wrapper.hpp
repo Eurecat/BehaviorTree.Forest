@@ -10,7 +10,7 @@
 #include <behaviortree_cpp/loggers/bt_minitrace_logger.h>
 #include <behavior_tree_eut_plugins/loggers/bt_zmq_publisher.h>
 
-#include "bt_transition_logger.hpp"
+#include "behaviortree_forest/bt_transition_logger.hpp"
 #include "behaviortree_ros2/bt_utils.hpp"
 
 #include <boost/filesystem.hpp>
@@ -20,8 +20,8 @@
 #include "behaviortree_forest_interfaces/msg/transition.hpp"
 #include "behaviortree_forest_interfaces/msg/bb_entry.hpp"
 
-#include "sync_blackboard.hpp"
-#include "utils.hpp"
+#include "behaviortree_forest/sync_blackboard.hpp"
+#include "behaviortree_forest/utils.hpp"
 
 // generated file
 #include "bt_executor_parameters.hpp"

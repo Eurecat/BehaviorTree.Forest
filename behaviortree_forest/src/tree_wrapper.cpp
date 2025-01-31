@@ -1,4 +1,4 @@
-#include "tree_wrapper.hpp"
+#include "behaviortree_forest/tree_wrapper.hpp"
 
 #include "yaml-cpp/yaml.h"
 
@@ -183,7 +183,7 @@ namespace BT_SERVER
       //     "\tvalue=" << _single_upd.value << "\n" << std::flush;
       // bool update_successful = false;
       
-      const bool void_type = (_single_upd.type == BT::demangle(typeid(void))); // source tree does not know the type of the value
+      const bool void_type = (_single_upd.type == BT::demangle(typeid(void))); // source tree does not know the type of the value //TODO Check how bt.cpp v4 handle void: directly with Any??
 
       //Get the Entry
       const BT::Blackboard::Entry* entry_ptr = global_blackboard_->getEntry(_single_upd.key).get();
@@ -305,7 +305,15 @@ namespace BT_SERVER
 
     if (enable_zmq_log_) 
     {
-      bt_logger_zmq_ = std::make_unique<BT::PublisherZMQ>(*debug_tree_ptr, 25, tree_publisher_port_,tree_server_port_);
+      try
+      {
+        bt_logger_zmq_ = std::make_unique<BT::PublisherZMQ>(*debug_tree_ptr, 25, tree_publisher_port_,tree_server_port_);
+      }
+      catch (const std::exception& ex)
+      {
+        RCLCPP_WARN(node_->get_logger(),"Error initializing ZMQPublisher logger for %s: %s", tree_name_.c_str(), ex.what());
+        bt_logger_zmq_.reset();
+      }
       //TODO:
       //initGrootV2Pub();
     }

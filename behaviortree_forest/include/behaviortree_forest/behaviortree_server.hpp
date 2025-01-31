@@ -20,9 +20,9 @@
 #include "behavior_tree_eut_plugins/eut_debug.h"
 #include <behaviortree_cpp/bt_factory.h>
 
-#include "sync_blackboard.hpp"
-#include "ros2_launch_manager.hpp"
-#include "utils.hpp"
+#include "behaviortree_forest/sync_blackboard.hpp"
+#include "behaviortree_forest/ros2_launch_manager.hpp"
+#include "behaviortree_forest/utils.hpp"
 #include "yaml-cpp/yaml.h"
 
 #include <chrono>
@@ -51,10 +51,12 @@ namespace BT_SERVER
       {
           tree_name = in_tree_name;
           pid = in_pid;
+          killed = false;
       };
       pid_t pid;
       std::string tree_name;
       TreeStatus tree_status;
+      bool killed;
       rclcpp::Subscription<TreeStatus>::SharedPtr status_subscriber;
   };
   class BehaviorTreeServer
@@ -68,6 +70,8 @@ namespace BT_SERVER
       bool loadTreeCB(const std::shared_ptr<LoadTreeSrv::Request> req, std::shared_ptr<LoadTreeSrv::Response> res);
       bool stopTreeCB(const std::shared_ptr<TreeRequestSrv::Request> req, std::shared_ptr<TreeRequestSrv::Response> res);
       bool killTreeCB(const std::shared_ptr<TreeRequestSrv::Request> req, std::shared_ptr<TreeRequestSrv::Response> res);
+      bool killTree(const uint8_t tree_uid, const bool force_kill = false);
+      bool killAllTrees(const bool force_kill = false);
       bool killAllTreesCB(const std::shared_ptr<EmptySrv::Request> req, std::shared_ptr<EmptySrv::Response> res);
       bool pauseTreeCB(const std::shared_ptr<TreeRequestSrv::Request> req, std::shared_ptr<TreeRequestSrv::Response> res);
       bool resumeTreeCB(const std::shared_ptr<TreeRequestSrv::Request> req, std::shared_ptr<TreeRequestSrv::Response> res);
@@ -78,12 +82,37 @@ namespace BT_SERVER
       void treeStatusTopicCB(const TreeStatus::SharedPtr msg);
       void syncBBCB(const BBEntry::SharedPtr msg) const;
       void initBB(const std::string& abs_file_path, BT::Blackboard::Ptr blackboard_ptr);
-      bool handleCallEmptySrv(rclcpp::Client<EmptySrv>::SharedPtr service_client);
-      void emptySrvCB(rclcpp::Client<std_srvs::srv::Empty>::SharedFuture future);
-      void triggerSrvCB(rclcpp::Client<std_srvs::srv::Trigger>::SharedFuture future);
-      bool rosServiceKillCall (std::string tree_name);
-      bool rosServiceStopCall (std::string tree_name);
-      bool rosServiceRestartCall (std::string tree_name);
+
+      template<typename T>
+      std::pair<std::shared_ptr<typename T::Response>, rclcpp::FutureReturnCode> handleSyncSrvCall(const std::string& service_name)
+      {
+        const auto bad_request = std::make_pair(nullptr, rclcpp::FutureReturnCode::INTERRUPTED);
+        if (!rclcpp::ok())  // ✅ Ensure ROS is still running before creating a node
+        {
+          std::cerr << "Trying to create a node and create a service client with ROS shutting down\n" << std::flush;
+          return bad_request;
+        }
+        
+        std::string client_node_name = "client_" + std::string(service_name);
+        std::replace(client_node_name.begin(), client_node_name.end(), '/', '_');
+        auto client_node = std::make_shared<rclcpp::Node>(client_node_name);
+
+        const auto service_client = client_node->create_client<T>(service_name); 
+        if (!service_client->service_is_ready()) 
+        {
+          RCLCPP_ERROR(client_node->get_logger(), "Failed service call: service %s does not exist", service_client->get_service_name());
+          return bad_request;
+        }
+
+        // Create the request for the Empty service you want to call
+        auto trigger_request = std::make_shared<typename T::Request>();
+        auto future = service_client->async_send_request(trigger_request);
+        rclcpp::FutureReturnCode ret_code = rclcpp::spin_until_future_complete(client_node, future, std::chrono::milliseconds(2000));
+        return std::make_pair((ret_code == rclcpp::FutureReturnCode::SUCCESS)? future.get() : nullptr, ret_code);
+      }
+
+      bool handleCallEmptySrv(const std::string& service_name);
+      bool handleCallTriggerSrv(const std::string& service_name);
 
       //Services
       rclcpp::Service<LoadTreeSrv>::SharedPtr load_tree_srv_;
@@ -98,11 +127,11 @@ namespace BT_SERVER
       rclcpp::Service<TreeRequestSrv>::SharedPtr resume_tree_srv_;
 
       //Service Clients
-      rclcpp::Client<EmptySrv>::SharedPtr kill_service_client_;
-      rclcpp::Client<EmptySrv>::SharedPtr stop_service_client_;
-      rclcpp::Client<EmptySrv>::SharedPtr restart_service_client_;
-      rclcpp::Client<TriggerSrv>::SharedPtr  pause_service_client_;
-      rclcpp::Client<TriggerSrv>::SharedPtr resume_service_client_;
+      // rclcpp::Client<EmptySrv>::SharedPtr kill_service_client_;
+      // rclcpp::Client<EmptySrv>::SharedPtr stop_service_client_;
+      // rclcpp::Client<EmptySrv>::SharedPtr restart_service_client_;
+      // rclcpp::Client<TriggerSrv>::SharedPtr  pause_service_client_;
+      // rclcpp::Client<TriggerSrv>::SharedPtr resume_service_client_;
       //Subscribers
       rclcpp::Subscription<BBEntry>::SharedPtr sync_bb_sub_;
       
@@ -126,7 +155,6 @@ namespace BT_SERVER
 
       rclcpp::Node::SharedPtr node_ ;
       rclcpp::executors::MultiThreadedExecutor executor_;
-      rclcpp::CallbackGroup::SharedPtr srv_cb_group_;
   };
 }
 #endif

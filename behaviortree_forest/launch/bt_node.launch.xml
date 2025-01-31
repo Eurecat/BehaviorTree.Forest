@@ -1,7 +1,7 @@
 <launch>
 
-  <node pkg="behaviortree_node" exec="behaviortree_node" name="behaviortree_node" output="screen">
-    <param from="$(find-pkg-share behaviortree_server)/config/bt_node_param.yaml"/>
+  <node pkg="behaviortree_forest" exec="behaviortree_node" name="behaviortree_node" output="screen">
+    <param from="$(find-pkg-share behaviortree_forest)/config/bt_node_param.yaml"/>
   </node>
 
 </launch>
