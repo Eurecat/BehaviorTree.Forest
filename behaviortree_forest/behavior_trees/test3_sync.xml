@@ -5,10 +5,16 @@
         <Repeat num_cycles="-1">
             <Sequence>
                 <Sleep msec="1000"/>
+                <Script code="in_switch:=1"/>
+                <Sleep msec="1000"/>
                 <SetBlackboard output_key="in_switch" value="0"/>
                 <Sleep msec="1000"/>
                 <SetBlackboard output_key="in_switch" value="1"/>
-                <WasEntryUpdated entry="${in_switch}"/>
+                <!-- <WasEntryUpdated entry="$${in_switch}"/> -->
+                <Parallel success_count="$${in_switch}" failure_count="1">
+                    <AlwaysSuccess/>
+                    <AlwaysSuccess/>
+                </Parallel>
             </Sequence>
         </Repeat>
     </BehaviorTree>

@@ -1,17 +1,14 @@
 #include "behaviortree_forest/tree_wrapper.hpp"
+#include "behaviortree_eut_plugins/eut_utils.h"
 
 #include "yaml-cpp/yaml.h"
 
 namespace BT_SERVER
 {
   TreeWrapper::TreeWrapper(const rclcpp::Node::SharedPtr& node)
-    : node_(node)
+    : node_(node), tree_ptr_(nullptr)
   {
-    global_blackboard_ = BT::Blackboard::create();
-
-    RCLCPP_INFO(node_->get_logger(),"Init tree_ptr");
-    // Init Tree_ptr and debugTree
-    tree_ptr_ = std::make_shared<BT::Tree> ();
+    root_blackboard_ = BT::Blackboard::create();
   }
 
   TreeWrapper::~TreeWrapper() {}
@@ -29,12 +26,12 @@ namespace BT_SERVER
   void TreeWrapper::removeTree()
   {
      resetTree();
-     //is_tree_loaded_ = true;
+     tree_ptr_.reset();
   }
 
   BT::NodeAdvancedStatus TreeWrapper::tickTree()
   {
-    auto status = tree_ptr_->tickOnce();
+    auto status = isTreeLoaded()? tree_ptr_->tickExactlyOnce() : BT::NodeStatus::IDLE;
     return toAdvancedNodeStatus(status);
   }
 
@@ -160,6 +157,66 @@ namespace BT_SERVER
       bt_execution_status_publisher_ = node_->create_publisher<TreeStatus>("/"+tree_name_+"/execution_status", 100);
   }
 
+  bool TreeWrapper::updateSyncMapEntrySyncStatus(const std::string& key, SyncStatus sync_status) 
+  { 
+    std::cout << "Updating sync status of " << key << " to " << BT_SERVER::toStr(sync_status) << "\n" << std::endl;
+    std::scoped_lock lock{syncMap_lock_};  // protect this block
+    auto syncmapentry_it = syncMap_.find(key);
+    if(syncmapentry_it != syncMap_.end())
+    {
+      return syncmapentry_it->second.updateSyncStatus(sync_status);
+      return true;
+    }
+    return false;
+  }
+
+  bool TreeWrapper::updateSyncMapEntrySyncStatus(const std::string& key, SyncStatus expected_sync_status, SyncStatus new_sync_status) 
+  { 
+    std::cout << "Updating sync status of " << key << " to " << BT_SERVER::toStr(new_sync_status) << "\n" << std::endl;
+    std::scoped_lock lock{syncMap_lock_};  // protect this block
+    auto syncmapentry_it = syncMap_.find(key);
+    if(syncmapentry_it != syncMap_.end())
+    {
+      return syncmapentry_it->second.updateSyncStatus(expected_sync_status, new_sync_status);
+      return true;
+    }
+    return false;
+  }
+
+  bool TreeWrapper::addToSyncMap(const std::string& bb_key, SyncStatus sync_status) 
+  { 
+    if(const auto entry_ptr = root_blackboard_->getEntry(bb_key))
+    {
+      std::scoped_lock lock{syncMap_lock_};  // protect this block
+      if(syncMap_.find(bb_key) == syncMap_.end())
+      {
+        syncMap_.emplace(bb_key, std::move(SyncEntry(entry_ptr, sync_status)));
+        return true;
+      }
+    }
+    return false;
+  }
+  std::pair<bool, SyncEntry> TreeWrapper::checkForSyncKey(const std::string& key)
+  {
+    std::scoped_lock lock{syncMap_lock_};  // protect this block
+    const auto it = syncMap_.find(key);
+    if(it != syncMap_.end())
+      return std::make_pair(true, it->second.getSafeCopy());
+    else
+      return std::make_pair(false, SyncEntry());
+  }
+
+  bool TreeWrapper::checkSyncStatus(const std::string& key, SyncStatus sync_status)
+  {
+    std::scoped_lock lock{syncMap_lock_};  // protect this block
+    const auto sync_item_it = syncMap_.find(key);
+    if(sync_item_it != syncMap_.end())
+    {
+      return sync_item_it->second.syncStatus() == sync_status;
+    }
+    return false;
+  }
+
   void TreeWrapper::syncBBUpdateCB(const std::vector<BBEntry>& _bulk_upd)
   {
       for(const auto& upd : _bulk_upd)
@@ -169,84 +226,118 @@ namespace BT_SERVER
   void TreeWrapper::syncBBUpdateCB(const BBEntry& _single_upd)
   {
       //Check that the tree is loaded
-      if(!is_tree_loaded_) return;
+      if(!isTreeLoaded()) return;
 
-      //Updates are republished from bt_server, check that the update comes from another BT
-      if (_single_upd.bt_id == tree_name_) return;
-
+      std::cout << "[BTWrapper "<<tree_name_<<"]::syncBBUpdateCB " << 
+          "\tkey=" << _single_upd.key << 
+          "\ttype=" << _single_upd.type << 
+          "\tvalue=" << _single_upd.value << "\n" << std::flush;
       //Check that the Entry received is Sync for this BT
-      if (!hasSyncKey(_single_upd.key)) return;
+      const auto& checked_sync_entry = checkForSyncKey(_single_upd.key);
+      if (!checked_sync_entry.first || !checked_sync_entry.second.entry) return;
 
-      // std::cout << "[BTWrapper "<<tree_identifier_<<"]::syncBBUpdateCB " << 
-      //     "\tkey=" << _single_upd.key << 
-      //     "\ttype=" << _single_upd.type << 
-      //     "\tvalue=" << _single_upd.value << "\n" << std::flush;
-      // bool update_successful = false;
-      
-      const bool void_type = (_single_upd.type == BT::demangle(typeid(void))); // source tree does not know the type of the value //TODO Check how bt.cpp v4 handle void: directly with Any??
-
-      //Get the Entry
-      const BT::Blackboard::Entry* entry_ptr = global_blackboard_->getEntry(_single_upd.key).get();
-
-     //retrieve string converter functor
-      const BT::StringConverter* string_converter_ptr = (void_type || !entry_ptr)? nullptr : &entry_ptr->string_converter;
-      
-      //check string converter functor
-      if(!void_type && string_converter_ptr == nullptr)
+      //Updates are republished from bt_server, check that the update comes from another BT before processing the value and update the BB
+      if (_single_upd.bt_id != tree_name_)
       {
-          RCLCPP_ERROR(node_->get_logger(),"[BTWrapper %s] Entry in Sync. BB for key [%s] has type [%s], but no string converter can be found for this type", 
-              tree_name_.c_str(), _single_upd.key.c_str(), _single_upd.type.c_str());
-          return;
-      }
+        bool update_successful = false;
+        
+        // const bool void_type = (_single_upd.type == BT::demangle(typeid(void))); // source tree does not know the type of the value //TODO Check how bt.cpp v4 handle void: directly with Any??
 
-      //retrieve current entry in bt server bb
-      if(entry_ptr)
-      {
-          // if(entry_ptr->port_info.missingTypeInfo()) is it necessary??? I would not update type info if received from another tree (i.e. from void to type T, with T != void)
-          // {
-          //     BT::Optional<BT::PortInfo> port_info_opt = bt_factory_ptr->getPortInfo(_single_upd.type);
-          //     if(!port_info_opt.has_value())
-          //     {
-          //         ROS_ERROR("[BTWrapper %s] Entry in Sync. BB for key [%s] has type [%s], but it is an unknown type and therefore cannot be treated", tree_identifier_.c_str(), _single_upd.key.c_str(), _single_upd.type.c_str());
-          //         return; // type unknown
-          //     }
-          //     tree_->rootBlackboard()->setPortInfo(_single_upd.key, port_info_opt.value());
-          // }            
-          //Get the TypeInfo
-          auto type_info = global_blackboard_->entryInfo(_single_upd.key);
-          if( BT::missingTypeInfo(type_info->type())  && !void_type && _single_upd.type != type_info->typeName()) //TODO evaluate strictness and checks to be made here
-          {
-              RCLCPP_ERROR(node_->get_logger(),"[BTWrapper %s]. Entry in Sync. BB for key [%s] has type [%s], but receiving requests for update with type [%s]",
-                  tree_name_.c_str(), _single_upd.key.c_str(), type_info->typeName().c_str(), _single_upd.type.c_str());
-              return; // type inconsistencies, don't update
-          }
-          
-          try
-          {
-              if(!void_type)
+        //Get the Entry
+        std::shared_ptr<BT::Blackboard::Entry> entry_ptr = root_blackboard_->getEntry(_single_upd.key); // in principle the same as checked_sync_entry.second.entry, in practice could have been already deleted from the BB
+
+        // //retrieve string converter functor
+        // const BT::StringConverter* string_converter_ptr = (void_type || !entry_ptr)? nullptr : &entry_ptr->string_converter;
+        
+        // //check string converter functor
+        // if(!void_type && string_converter_ptr == nullptr)
+        // {
+        //     RCLCPP_ERROR(node_->get_logger(),"[BTWrapper %s] Entry in Sync. BB for key [%s] has type [%s], but no string converter can be found for this type", 
+        //         tree_name_.c_str(), _single_upd.key.c_str(), _single_upd.type.c_str());
+        //     return;
+        // }
+
+        //retrieve current entry in bt server bb
+        if(entry_ptr)
+        {
+            // if(entry_ptr->port_info.missingTypeInfo()) is it necessary??? I would not update type info if received from another tree (i.e. from void to type T, with T != void)
+            // {
+            //     BT::Optional<BT::PortInfo> port_info_opt = bt_factory_ptr->getPortInfo(_single_upd.type);
+            //     if(!port_info_opt.has_value())
+            //     {
+            //         ROS_ERROR("[BTWrapper %s] Entry in Sync. BB for key [%s] has type [%s], but it is an unknown type and therefore cannot be treated", tree_identifier_.c_str(), _single_upd.key.c_str(), _single_upd.type.c_str());
+            //         return; // type unknown
+            //     }
+            //     tree_->rootBlackboard()->setPortInfo(_single_upd.key, port_info_opt.value());
+            // }            
+            //Get the TypeInfo
+            // auto type_info = root_blackboard_->entryInfo(_single_upd.key);
+            // if( BT::missingTypeInfo(type_info->type())  && !void_type && _single_upd.type != type_info->typeName()) //TODO evaluate strictness and checks to be made here
+            // {
+            //     RCLCPP_ERROR(node_->get_logger(),"[BTWrapper %s]. Entry in Sync. BB for key [%s] has type [%s], but receiving requests for update with type [%s]",
+            //         tree_name_.c_str(), _single_upd.key.c_str(), type_info->typeName().c_str(), _single_upd.type.c_str());
+            //     return; // type inconsistencies, don't update
+            // }
+            
+            if(isStronglyTyped(_single_upd.type) && entry_ptr->info.isStronglyTyped() && _single_upd.type != entry_ptr->info.typeName())
+            {
+              if(entry_ptr->value.isNumber() && isNumberType(_single_upd.type))
               {
-                  // convert from string new value
-                  BT::Any new_any_value = type_info->parseString(_single_upd.value);
-                  
-                  // std::cout << "[BTWrapper "<<tree_identifier_<<"]::syncBBUpdateCB built new_any_value with type " << BT::demangle(new_any_value.type()) << " \n" << std::flush;
-                  // update it into the sync BB
-                  global_blackboard_->set(_single_upd.key, std::move(new_any_value));
+                // will be treated later within the library in the blackboard->set(...) call and might be still acceptable
               }
               else
-                  global_blackboard_->set(_single_upd.key, _single_upd.value);
-          
-          }
-          catch(const std::exception& e)
-          {
-              std::cerr << "[BTWrapper "<<tree_name_<<"]::syncBBUpdateCB fail to update value in BB for key [" << _single_upd.key << "]: " << e.what() << " \n" << std::flush;
-              return;
-          }
+              {
+                // unacceptable inconsistency
+                RCLCPP_ERROR(node_->get_logger(),"[BTWrapper %s]::syncBBUpdateCB Failed to update sync port from SERVER for key [%s] with value [%s] : Type inconsistency type %s, but received %s", 
+                  tree_name_.c_str(),
+                  _single_upd.key.c_str(), _single_upd.value.c_str(),
+                  _single_upd.type.c_str(), entry_ptr->info.typeName().c_str());
+                return;
+              }
+            }
 
-          // std::cout << "[BTWrapper "<<tree_identifier_<<"]::syncBBUpdateCB updated value in BB for key [" << _single_upd.key << "] \n" << std::flush;
-          // update_successful = true;
+            try
+            {
+              
+              const nlohmann::json json_value = nlohmann::json::parse(_single_upd.value);
+              const BT::JsonExporter::ExpectedEntry expected_entry = BT::eutFromJson(json_value);
+              if(expected_entry.has_value())
+              {
+                root_blackboard_->set(_single_upd.key, std::move(expected_entry.value().first));
+                // if(entry_ptr->info.isStronglyTyped())
+                // {
+                //     // convert from string new value
+                //     // BT::Any new_any_value = type_info->parseString(_single_upd.value);
+                    
+                    
+                //     // std::cout << "[BTWrapper "<<tree_identifier_<<"]::syncBBUpdateCB built new_any_value with type " << BT::demangle(new_any_value.type()) << " \n" << std::flush;
+                //     // update it into the sync BB
+                //     root_blackboard_->set(_single_upd.key, std::move(new_any_value));
+                // }
+                // else
+                //     root_blackboard_->set(_single_upd.key, _single_upd.value);
+              }
+            
+            }
+            catch(const std::exception& e)
+            {
+                std::cerr << "[BTWrapper "<<tree_name_<<"]::syncBBUpdateCB fail to update value in BB for key [" << _single_upd.key << "]: " << e.what() << " \n" << std::flush;
+                return;
+            }
+
+            // std::cout << "[BTWrapper "<<tree_identifier_<<"]::syncBBUpdateCB updated value in BB for key [" << _single_upd.key << "] \n" << std::flush;
+            // update_successful = true;
+        }
       }
-    //Update sync timestamp
-    last_sync_update_ = std::chrono::steady_clock::now().time_since_epoch();
+
+      if(_single_upd.bt_id == tree_name_ && _single_upd.sender_sequence_id < checked_sync_entry.second.entry->sequence_id)
+      {
+        // This is supposed to be the ACK for the sync sent by this tree and it's an old one, so the variable cannot be considered synced (yet)
+        return;
+      }
+      
+      
+      updateSyncMapEntrySyncStatus(_single_upd.key, SyncStatus::SYNCED); // being it yours or from another tree, mark it as synced
   }
 
   void TreeWrapper::resetLoggers()
@@ -425,7 +516,7 @@ namespace BT_SERVER
             if (sync_entry) {bb_key.erase(0, 1);}
 
             //TODO: Inferred Values
-            /*const BT::Expected<std::string> bbentry_value_inferred_keyvalues = replaceKeysWithStringValues(bb_val, global_blackboard_, true); // no effect if it has no key
+            /*const BT::Expected<std::string> bbentry_value_inferred_keyvalues = replaceKeysWithStringValues(bb_val, root_blackboard_, true); // no effect if it has no key
             if(!bbentry_value_inferred_keyvalues)
             {
                 // but will complain if it has a reference to a wrong key
@@ -440,37 +531,48 @@ namespace BT_SERVER
 
             RCLCPP_INFO(node_->get_logger(),"Init. BB key [\"%s\"] with value \"%s\"", bb_key.c_str(), bb_val.c_str());
             // use the string here and blackboard_ptr->set(...)
-            global_blackboard_->set(bb_key, bb_val);
+            root_blackboard_->set(bb_key, bb_val);
             
             //ADD VALUE TO SYNC MAP
             if (sync_entry)
             {
-              syncMap_.emplace(bb_key,std::make_pair(SyncStatus::TO_SYNC,global_blackboard_->getEntry(bb_key)));
+              addToSyncMap(bb_key, SyncStatus::TO_SYNC);
             }
         }
-        RCLCPP_INFO(node_->get_logger(),"Initialized BB with %ld entries from YAML file %s", global_blackboard_->getKeys().size(), abs_file_path.c_str());
+        RCLCPP_INFO(node_->get_logger(),"Initialized BB with %ld entries from YAML file %s", root_blackboard_->getKeys().size(), abs_file_path.c_str());
     }
     catch(const YAML::Exception& ex) 
     { 
         RCLCPP_ERROR(node_->get_logger(),"Initializing. BB key from file '%s' did not succeed: %s", abs_file_path.c_str(), ex.what());
     }
   }
-  void TreeWrapper::updateSyncStatus()
+  
+  void TreeWrapper::checkForToSyncEntries()
   {
+    std::vector<std::string> erased_entries;
+    std::scoped_lock lock{syncMap_lock_};  // protect this block
     //SEARCH ON THE BLACKBOARD FOR NEW SYNC PORTS UPDATED
-    std::unordered_set<std::string> syncKeys = getSyncKeysList();
-
-    for (auto key : syncKeys)
+    for (auto& sync_entry_item : syncMap_)
     {
-      auto entry = global_blackboard_->getEntry(key);
-      if (entry->stamp > last_sync_update_)
+      const SyncEntry& sync_entry = sync_entry_item.second.getSafeCopy();
+      std::cout << "checkForToSyncEntries entry " << sync_entry_item.first << 
+        "\tstamp=" << std::to_string(sync_entry.entry->stamp.count()) <<
+        "\tlast_synced=" << std::to_string(sync_entry.last_synced.count()) << std::endl;
+      if(root_blackboard_->entryInfo(sync_entry_item.first) == nullptr)
       {
-        syncMap_[key] = std::make_pair(SyncStatus::TO_SYNC,entry);
+        erased_entries.push_back(sync_entry_item.first);// erased entry
+        continue;
+      }
+
+      if (sync_entry.entry && sync_entry.entry->stamp > sync_entry.last_synced)
+      {
+        sync_entry_item.second.updateSyncStatus(SyncStatus::TO_SYNC);
       }
     }
 
-    //Update sync timestamp
-    last_sync_update_ = std::chrono::steady_clock::now().time_since_epoch();
+    // removed erased entries from SyncMap
+    for(const auto& erased_entry : erased_entries)
+      syncMap_.erase(syncMap_.find(erased_entry));
   }
 
   void TreeWrapper::createTree(const std::string& full_path, bool tree_debug)
@@ -482,7 +584,13 @@ namespace BT_SERVER
       //Extract SyncKeys from the XML Tree and Replace '$${key}' --> '${key}'
       sync_keys = extractSyncKeys(tree_xml);
       //Create the tree
-      tree_ptr_ = std::make_shared<BT::Tree> (factory_.createTreeFromText(tree_xml,global_blackboard_));
+      tree_ptr_ = std::make_shared<BT::Tree> (factory_.createTreeFromText(tree_xml,root_blackboard_));
+
+      start_execution_time_ = node_->get_clock()->now();
+
+      std::cout << "TREE INSTANTIATED WITH THIS BB INIT (BEFORE SYNC EXCHANGE)\n" << std::flush;
+      root_blackboard_->debugMessage();
+      std::cout << "\n\n" << std::flush;
     }
     else
     {
@@ -492,14 +600,8 @@ namespace BT_SERVER
     //Add the syncKeys to the syncMap
     for (auto key: sync_keys)
     {
-      syncMap_.emplace(key,std::make_pair(SyncStatus::TO_SYNC,global_blackboard_->getEntry(key)));
+      addToSyncMap(key, SyncStatus::TO_SYNC); // will not be added if not in the root_blackboard_
     }
-
-    /*
-    for (auto key: syncMap_)
-    {
-      RCLCPP_INFO(node_->get_logger(),"SyncMap_ : %s", key.first.c_str());
-    }*/
 
     //Create debug_tree_ptr
     RCLCPP_INFO(node_->get_logger(),"Init debug_tree_ptr");
@@ -507,40 +609,37 @@ namespace BT_SERVER
 
   }
 
-  void TreeWrapper::setTreeLoaded(bool loaded)
-  { 
-    is_tree_loaded_ = loaded;
-    if (loaded)
-    {
-      start_execution_time_ = node_->get_clock()->now();
-      last_sync_update_ = std::chrono::steady_clock::now().time_since_epoch();
-    }
-  }
-
   SyncMap TreeWrapper::getKeysValueToSync ()
   {
-    //RCLCPP_INFO(node_->get_logger()," Getting Keys Value to Sync"); 
+    std::scoped_lock lock{syncMap_lock_};  // protect this block  
+    RCLCPP_INFO(node_->get_logger()," Getting Keys Value to Sync"); 
     SyncMap ports_to_be_sync_cpy;
-    for(auto element : syncMap_)
+    for(auto& element : syncMap_)
     {
-      if(element.second.first == SyncStatus::TO_SYNC)
+      BT_SERVER::SyncEntry sync_entry_cp = element.second.getSafeCopy();
+      if(sync_entry_cp.entry && 
+          !sync_entry_cp.entry->value.empty() &&
+          // (!sync_entry_cp.entry->value.empty() || !BT::missingTypeInfo(sync_entry_cp.entry->info.type())) && // shall be not empty or shall have at least a type to be shared 
+          sync_entry_cp.status == SyncStatus::TO_SYNC || sync_entry_cp.status == SyncStatus::SYNCING)
       {
-        element.second.first = SyncStatus::SYNCING;
-        updateSyncMap(element.first,element.second);
-        ports_to_be_sync_cpy.emplace(element);
+        std::cout << "getKeysValueToSync select " << element.first << std::endl;
+        ports_to_be_sync_cpy.emplace(element.first, std::move(sync_entry_cp));
       }
     }
     //RCLCPP_INFO(node_->get_logger()," Getting Keys Value to Sync OK"); 
     return ports_to_be_sync_cpy;
   }
 
-  std::unordered_set<std::string> TreeWrapper::getSyncKeysList()
+  std::vector<std::string> TreeWrapper::getSyncKeysList()
   {
-    std::unordered_set<std::string> keys;
+    std::vector<std::string> keys;
+
     {
-      for (auto element : syncMap_)
+      std::scoped_lock lock{syncMap_lock_};  // protect this block
+      keys.reserve(syncMap_.size()); // Reserve space to avoid unnecessary allocations
+      for (const auto& element : syncMap_)
       {
-        keys.insert(element.first);
+        keys.push_back(element.first);
       }
     }
     return keys;

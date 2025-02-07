@@ -6,9 +6,9 @@
 #include "behaviortree_cpp/loggers/groot2_publisher.h"
 #include "behaviortree_cpp/bt_factory.h"
 #include <behaviortree_cpp/loggers/bt_cout_logger.h>
-#include <behavior_tree_eut_plugins/loggers/bt_file_logger.h>
+#include <behaviortree_eut_plugins/loggers/bt_file_logger.h>
 #include <behaviortree_cpp/loggers/bt_minitrace_logger.h>
-#include <behavior_tree_eut_plugins/loggers/bt_zmq_publisher.h>
+#include <behaviortree_eut_plugins/loggers/bt_zmq_publisher.h>
 
 #include "behaviortree_forest/bt_transition_logger.hpp"
 #include "behaviortree_ros2/bt_utils.hpp"
@@ -41,7 +41,7 @@ namespace BT_SERVER
     ~TreeWrapper();
     rclcpp::Node::SharedPtr node() { return node_; }
     const BT::Tree& tree() const { return *tree_ptr_; }
-    BT::Blackboard::Ptr globalBlackboard() { return global_blackboard_; }
+    BT::Blackboard::Ptr rootBlackboard() { return root_blackboard_; }
     BT::BehaviorTreeFactory& factory() { return factory_; }
     BT::NodeAdvancedStatus tickTree();
 
@@ -55,8 +55,7 @@ namespace BT_SERVER
       std::lock_guard<std::mutex> lk(status_lock_);
       return status_;
     }
-    bool isTreeLoaded() { return is_tree_loaded_; }
-    void setTreeLoaded(bool loaded);
+    bool isTreeLoaded() const { return !!tree_ptr_; }
 
     void removeTree();
     bool resetTree();
@@ -76,9 +75,16 @@ namespace BT_SERVER
     void syncBBUpdateCB(const BBEntry& _single_upd);
     void syncBBUpdateCB(const std::vector<BBEntry>& _bulk_upd);
     SyncMap getKeysValueToSync ();
-    void updateSyncMap(const std::string key, SyncEntry syncEntry) { syncMap_[key] = syncEntry;}
-    void updateSyncStatus();
-    std::unordered_set<std::string> getSyncKeysList();
+    
+    bool updateSyncMapEntrySyncStatus(const std::string& key, SyncStatus sync_status);
+    bool updateSyncMapEntrySyncStatus(const std::string& key, SyncStatus expected_sync_status, SyncStatus new_sync_status); 
+    bool addToSyncMap(const std::string& bb_key, SyncStatus sync_status);
+    std::pair<bool, SyncEntry> checkForSyncKey(const std::string& key);
+    bool checkSyncStatus(const std::string& key, SyncStatus sync_status);
+
+
+    void checkForToSyncEntries();
+    std::vector<std::string> getSyncKeysList();
 
     //Tree Status
     //std::string execution_tree_status_ {};
@@ -109,19 +115,14 @@ namespace BT_SERVER
     void initBBFromFile(const std::string& abs_file_path);
     void initGrootV2Pub();
     void resetLoggers();
-    bool hasSyncKey(const std::string& key)
-    {
-      return syncMap_.find(key) != syncMap_.end();
-    }
     BT::NodeAdvancedStatus toAdvancedNodeStatus (BT::NodeStatus status);
     rclcpp::Node::SharedPtr node_;
     std::shared_ptr<BT::Tree> tree_ptr_;
 
     BT::BehaviorTreeFactory factory_;
-    BT::Blackboard::Ptr global_blackboard_;
+    BT::Blackboard::Ptr root_blackboard_;
 
     bool executed_{false};
-    bool is_tree_loaded_{false};
     bool factory_initialized_ = false;
 
     //Loggers
@@ -141,8 +142,8 @@ namespace BT_SERVER
     std::mutex status_lock_;
 
     //Sync
+    std::mutex syncMap_lock_;
     SyncMap syncMap_;
-    std::chrono::nanoseconds last_sync_update_ = std::chrono::nanoseconds{ 0 };
   };
 }
 #endif

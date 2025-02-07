@@ -17,7 +17,6 @@
 #include "behaviortree_forest_interfaces/srv/get_all_trees_status.hpp"
 
 #include "behaviortree_cpp/blackboard.h"
-#include "behavior_tree_eut_plugins/eut_debug.h"
 #include <behaviortree_cpp/bt_factory.h>
 
 #include "behaviortree_forest/sync_blackboard.hpp"

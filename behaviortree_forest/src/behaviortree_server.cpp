@@ -1,6 +1,9 @@
 
 #include "behaviortree_forest/behaviortree_server.hpp"
 
+
+#include "behaviortree_eut_plugins/eut_utils.h"
+
 namespace BT_SERVER
 {
   BehaviorTreeServer::BehaviorTreeServer(const rclcpp::Node::SharedPtr& node) : node_(node) 
@@ -46,62 +49,107 @@ namespace BT_SERVER
   {
     RCLCPP_INFO(node_->get_logger(), "Received a Sync Update from %s BT. Key: '%s' Type: '%s' Value: '%s'", msg->bt_id.c_str(), msg->key.c_str(),msg->type.c_str(), msg->value.c_str());
 
-    //Check if input msg type is Void
-    const bool void_type = (msg->type == BT::demangle(typeid(void)));
-    if (void_type)
+    if(sync_blackboard_ptr_)
     {
-      //Skip Sync Entry as it still has no type declared
-      return;
-    }
+      auto entry_ptr = sync_blackboard_ptr_->getEntry(msg->key);
 
-    //Get the Entry & TypeInfo from the server BB 
-    const BT::Blackboard::Entry* entry_bb_server = sync_blackboard_ptr_->getEntry(msg->key).get();
-    const BT::TypeInfo* type_info_bb_server = sync_blackboard_ptr_->entryInfo(msg->key);
+      // type safety checks
+      if(entry_ptr)
+      { 
+        if(isStronglyTyped(msg->type) && entry_ptr->info.isStronglyTyped() && msg->type != entry_ptr->info.typeName())
+        {
+          if(entry_ptr->value.isNumber() && isNumberType(msg->type))
+          {
+            // will be treated later within the library in the blackboard->set(...) call and might be still acceptable
+          }
+          else
+          {
+            // unacceptable inconsistency
+            RCLCPP_ERROR(node_->get_logger(),"Failed to update sync port in SERVER BB for key [%s] with value [%s] : Type inconsistency type %s, but received %s", 
+              msg->key.c_str(), msg->value.c_str(),
+              msg->type.c_str(), entry_ptr->info.typeName().c_str());
+            return;
+          }
+        }
+      }
 
-    //Check if the Entry or Type info exist on the BB
-    if(entry_bb_server == nullptr || type_info_bb_server == nullptr)
-    {
-      // Entry not present in the BB -> Create & insert
-      BT::TypeInfo new_type_info = createTypeInfoFromType(msg->type);
-      sync_blackboard_ptr_->createEntry(msg->key, new_type_info);
-      RCLCPP_INFO(node_->get_logger(),"Entry in Sync BB for key [%s] Initialized with type [%s]", msg->key.c_str(), new_type_info.typeName().c_str());
-    }
-
-    //Retrieve current entry in bt server bb
-    auto entry_ptr = sync_blackboard_ptr_->getEntry(msg->key);
-    auto type_info = sync_blackboard_ptr_->entryInfo(msg->key);
-    if(!entry_ptr || !type_info)
-    {
-      // Error on BB Entry!
-      RCLCPP_ERROR(node_->get_logger(),"Entry/TypeInfo should exist on the Server BlackBoard!");
-      return;
-    }
-
-    if(msg->type != type_info->typeName())
-    {
-      // Type inconsistencies, don't update
-      RCLCPP_ERROR(node_->get_logger(),"Sync Entry Type Missmatch for key [%s] - BB_type:[%s] RX_type:[%s]", msg->key.c_str(), type_info->typeName().c_str(), msg->type.c_str());
-      return; 
-    }
-
-    try
-    {
-      // convert from string new value and insert on the BB
-      BT::Any new_any_value = type_info->parseString(msg->value); //If No Value set yet, it will not update the Entry and prompt de Warning
-      sync_blackboard_ptr_->set(msg->key, std::move(new_any_value));
-    }
-    catch(const std::exception& e)
-    {
-        RCLCPP_WARN(node_->get_logger(),"Failed to update sync port in SERVER BB for key [%s] with value [%s] : %s", msg->key.c_str(), msg->value.c_str(), e.what());
+      try
+      {
+        const nlohmann::json json_value = nlohmann::json::parse(msg->value);
+        RCLCPP_INFO(node_->get_logger(),"Sync port in SERVER BB for key [%s] with value parsed to json [%s] : type of parsed json [%s]", msg->key.c_str(), json_value.dump().c_str(), json_value.type_name());
+        const BT::JsonExporter::ExpectedEntry expected_entry = BT::eutFromJson(json_value);
+        if(expected_entry.has_value())
+        {
+          RCLCPP_INFO(node_->get_logger(),"Sync port in SERVER BB for key [%s] with entry parsed from json [%s] : type [%s][%s]", msg->key.c_str(), json_value.dump().c_str(), 
+            BT::demangle(expected_entry.value().first.type()).c_str(), expected_entry.value().second.typeName().c_str());
+          sync_blackboard_ptr_->set(msg->key, std::move(expected_entry.value().first));
+        }
+      
+      }
+      catch(const std::exception& e)
+      {
+        RCLCPP_ERROR(node_->get_logger(),"Failed to update sync port in SERVER BB for key [%s] with value [%s] : %s", msg->key.c_str(), msg->value.c_str(), e.what());
         return;
+      }
     }
+
+    // //Check if input msg type is Void
+    // const bool void_type = (msg->type == BT::demangle(typeid(void)));
+    // if (void_type)
+    // {
+    //   //Skip Sync Entry as it still has no type declared
+    //   return;
+    // }
+
+    // //Get the Entry & TypeInfo from the server BB 
+    // const BT::Blackboard::Entry* entry_bb_server = sync_blackboard_ptr_->getEntry(msg->key).get();
+    // const BT::TypeInfo* type_info_bb_server = sync_blackboard_ptr_->entryInfo(msg->key);
+
+    // //Check if the Entry or Type info exist on the BB
+    // if(entry_bb_server == nullptr || type_info_bb_server == nullptr)
+    // {
+    //   // Entry not present in the BB -> Create & insert
+    //   BT::TypeInfo new_type_info = createTypeInfoFromType(msg->type);
+    //   sync_blackboard_ptr_->createEntry(msg->key, new_type_info);
+    //   RCLCPP_INFO(node_->get_logger(),"Entry in Sync BB for key [%s] Initialized with type [%s]", msg->key.c_str(), new_type_info.typeName().c_str());
+    // }
+
+    // //Retrieve current entry in bt server bb
+    // auto entry_ptr = sync_blackboard_ptr_->getEntry(msg->key);
+    // auto type_info = sync_blackboard_ptr_->entryInfo(msg->key);
+    // if(!entry_ptr || !type_info)
+    // {
+    //   // Error on BB Entry!
+    //   RCLCPP_ERROR(node_->get_logger(),"Entry/TypeInfo should exist on the Server BlackBoard!");
+    //   return;
+    // }
+
+    // if(msg->type != type_info->typeName())
+    // {
+    //   // Type inconsistencies, don't update
+    //   RCLCPP_ERROR(node_->get_logger(),"Sync Entry Type Msmatch for key [%s] - BB_type:[%s] RX_type:[%s]", msg->key.c_str(), type_info->typeName().c_str(), msg->type.c_str());
+    //   return; 
+    // }
+
+    // try
+    // {
+    //   // convert from string new value and insert on the BB
+    //   BT::Any new_any_value = type_info->parseString(msg->value); //If No Value set yet, it will not update the Entry and prompt de Warning
+    //   sync_blackboard_ptr_->set(msg->key, std::move(new_any_value));
+    // }
+    // catch(const std::exception& e)
+    // {
+    //     RCLCPP_WARN(node_->get_logger(),"Failed to update sync port in SERVER BB for key [%s] with value [%s] : %s", msg->key.c_str(), msg->value.c_str(), e.what());
+    //     return;
+    // }
 
     //Republish message to all BT_NODES
     BBEntry upd_msg;
     upd_msg.key = msg->key;
-    upd_msg.type = sync_blackboard_ptr_->getEntry(msg->key)->info.type().name() ;
+    upd_msg.type = sync_blackboard_ptr_->getEntry(msg->key)->info.typeName() ;
     upd_msg.value = msg->value;
     upd_msg.bt_id = msg->bt_id;
+    upd_msg.sender_sequence_id = msg->sender_sequence_id;
     sync_bb_pub_->publish(upd_msg);
     RCLCPP_INFO(node_->get_logger(), "Sync Port %s Updated on BT_Server BB and Republished succesfully",msg->key.c_str());
   }
@@ -454,7 +502,7 @@ namespace BT_SERVER
             const std::string& bb_key = it->first.as<std::string>();
             std::string bb_val = it->second.as<std::string>();
             
-            const BT::Expected<std::string> bbentry_value_inferred_keyvalues = replaceKeysWithStringValues(bb_val,blackboard_ptr,true); // no effect if it has no key
+            const BT::Expected<std::string> bbentry_value_inferred_keyvalues = replaceKeysWithStringValues(bb_val,blackboard_ptr); // no effect if it has no key
             if(!bbentry_value_inferred_keyvalues)
             {
                 // but will complain if it has a reference to a wrong key

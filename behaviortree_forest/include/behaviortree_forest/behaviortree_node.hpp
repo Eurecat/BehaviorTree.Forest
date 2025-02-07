@@ -58,6 +58,7 @@ namespace BT_SERVER
       rclcpp::Node::SharedPtr node_ ;
       rclcpp::executors::MultiThreadedExecutor executor_;
       rclcpp::CallbackGroup::SharedPtr srv_cb_group_;
+      rclcpp::CallbackGroup::SharedPtr bb_upd_cb_group_;
       
       TreeWrapper tree_wrapper_;
       std::string trees_folder_;

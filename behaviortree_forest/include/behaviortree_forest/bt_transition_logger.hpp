@@ -4,7 +4,6 @@
 #include "rclcpp/rclcpp.hpp"
 #include <behaviortree_cpp/loggers/abstract_logger.h>
 #include "behaviortree_forest_interfaces/msg/transition.hpp"
-#include "behavior_tree_eut_plugins/eut_debug.h"
 
 using Transition = behaviortree_forest_interfaces::msg::Transition;
 

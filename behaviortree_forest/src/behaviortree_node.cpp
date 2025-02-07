@@ -1,4 +1,5 @@
 #include "behaviortree_forest/behaviortree_node.hpp"
+#include "behaviortree_eut_plugins/eut_utils.h"
 #include <chrono>
 
 namespace BT_SERVER
@@ -8,6 +9,7 @@ namespace BT_SERVER
     executor_(rclcpp::executors::MultiThreadedExecutor(rclcpp::ExecutorOptions(), 2))
   {
     srv_cb_group_ = node_->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    bb_upd_cb_group_ = node_->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
 
     //Fetch Tree Parameters
     getParameters(node);
@@ -21,8 +23,12 @@ namespace BT_SERVER
     restart_tree_srv_ = node_->create_service<EmptySrv>("/"+tree_name_+"/restart_tree",std::bind(&BehaviorTreeNode::restartTreeCB,this,_1,_2), rmw_qos_profile_services_default, srv_cb_group_);
     get_tree_status_srv_ = node_->create_service<GetTreeStatusSrv>("/"+tree_name_+"/status_tree",std::bind(&BehaviorTreeNode::statusTreeCB,this,_1,_2), rmw_qos_profile_services_default, srv_cb_group_);
 
+
+        // Define the subscription options
+    rclcpp::SubscriptionOptions sync_bb_sub_options;
+    sync_bb_sub_options.callback_group = bb_upd_cb_group_;  // Attach the subscription to the callback group
     // Updates subscriber server side
-    sync_bb_sub_ = node_->create_subscription<BBEntry>("behavior_tree_forest/broadcast_update", 10, std::bind(&BehaviorTreeNode::syncBBUpdateCB, this, _1)) ;
+    sync_bb_sub_ = node_->create_subscription<BBEntry>("behavior_tree_forest/broadcast_update", 10, std::bind(&BehaviorTreeNode::syncBBUpdateCB, this, _1), sync_bb_sub_options);
     
     // Updates republisher for all trees (put latch to true atm, because seems a good option that you receive last update from the server)
     sync_bb_pub_ = node_->create_publisher<BBEntry>("/behavior_tree_forest/local_update", 10);
@@ -40,8 +46,6 @@ namespace BT_SERVER
 
       //Load Tree
       if (!loadTree()) {return;}
-     
-      tree_wrapper_.setTreeLoaded(true);
 
       RCLCPP_INFO(node_->get_logger(),"Tree loaded OK");
 
@@ -124,31 +128,38 @@ namespace BT_SERVER
 
   void BehaviorTreeNode::syncBBUpdateCB(const BBEntry::SharedPtr _topic_msg)
   {   
+    RCLCPP_INFO(node_->get_logger(), "syncBBUpdateCB on key: %s", _topic_msg->key.c_str());
     // Forward received update to tree
     if(tree_wrapper_.isTreeLoaded()) tree_wrapper_.syncBBUpdateCB(*_topic_msg);
   }
 
   void BehaviorTreeNode::sendBlackboardUpdates(const SyncMap& entries_map)
   {
-  
-    for(auto ser_entry : entries_map)
+    for(const auto& ser_entry : entries_map)
     {
       RCLCPP_INFO(node_->get_logger(), "sendBlackboardUpdate on key: %s", ser_entry.first.c_str());
       //Check Sync Value is initialized
-      auto val = BT::getEntryAsString(ser_entry.first, tree_wrapper_.globalBlackboard());
+      auto val = BT::eutToJsonString(ser_entry.first, tree_wrapper_.rootBlackboard());
+      
       //if (val.has_value())
       {
         BBEntry bb_entry_msg;
         bb_entry_msg.key = ser_entry.first;
-        bb_entry_msg.type = ser_entry.second.second->info.typeName();
+        bb_entry_msg.type = ser_entry.second.entry->info.typeName();
         if (val.has_value())
           bb_entry_msg.value = val.value();
         else
           bb_entry_msg.value = "";
+        if (val.has_value())
+          RCLCPP_INFO(node_->get_logger(), "sendBlackboardUpdate on key: %s, its value as a stringified json will be like %s and if I try to convert it back to json its type is now %s", 
+          ser_entry.first.c_str(), bb_entry_msg.value.c_str(), nlohmann::json::parse(bb_entry_msg.value).type_name());
         bb_entry_msg.bt_id = tree_name_;
-        sync_bb_pub_->publish(bb_entry_msg);
-        ser_entry.second.first = SyncStatus::SYNCED;
-        tree_wrapper_.updateSyncMap(ser_entry.first,ser_entry.second);
+        bb_entry_msg.sender_sequence_id = ser_entry.second.entry->sequence_id;
+        
+        if(tree_wrapper_.updateSyncMapEntrySyncStatus(bb_entry_msg.key, SyncStatus::TO_SYNC, SyncStatus::SYNCING) || tree_wrapper_.checkSyncStatus(bb_entry_msg.key,SyncStatus::SYNCING))
+        {
+          sync_bb_pub_->publish(bb_entry_msg);
+        }
       }
       // else
       // {
@@ -164,8 +175,7 @@ namespace BT_SERVER
     rclcpp::Client<GetBBValues>::SharedPtr client = node_->create_client<GetBBValues>("/behavior_tree_forest/get_sync_bb_values"); 
     auto request = std::make_shared<GetBBValues::Request>();
 
-    const std::unordered_set<std::string> keys = tree_wrapper_.getSyncKeysList();
-    request->keys = std::vector<std::string>(keys.begin(), keys.end());
+    request->keys = tree_wrapper_.getSyncKeysList();
 
     while (!client->wait_for_service()) 
     {
@@ -202,13 +212,13 @@ namespace BT_SERVER
           try
           {
               //RCLCPP_INFO(node_->get_logger(),"TICK ONCE");
-              const auto tree_status = tree_wrapper_.tickTree();
-              //RCLCPP_INFO(node_->get_logger(),"TICK ONCE OK");
+              const auto tree_status = tree_wrapper_.tickTree(); 
+              RCLCPP_INFO(node_->get_logger(),"TICK ONCE OK");
 
-           //   RCLCPP_INFO(node_->get_logger(),"updateSyncStatus");
-              tree_wrapper_.updateSyncStatus();
-           //   RCLCPP_INFO(node_->get_logger(),"updateSyncStatus OK");
+              RCLCPP_INFO(node_->get_logger(),"update sync status");  
+              tree_wrapper_.checkForToSyncEntries(); 
 
+              RCLCPP_INFO(node_->get_logger(),"sendBlackboardUpdates");
               sendBlackboardUpdates(tree_wrapper_.getKeysValueToSync());
               
               // Publish the updated status if there have been changes.
@@ -289,7 +299,6 @@ namespace BT_SERVER
   {
     RCLCPP_INFO(node_->get_logger(),"killTreeCB");
     bool res = stopTreeCB(_request,_response);
-    tree_wrapper_.setTreeLoaded (false);
     tree_wrapper_.execution_tree_error_ = "Canceled by killTree Service";
     tree_wrapper_.updatePublishTreeExecutionStatus(BT::NodeAdvancedStatus::IDLE, false);
     return res;

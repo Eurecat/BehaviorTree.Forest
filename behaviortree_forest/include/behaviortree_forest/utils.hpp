@@ -1,11 +1,12 @@
-#ifndef BTSERVER_UTILS_HPP
-#define BTSERVER_UTILS_HPP
+#ifndef BTFOREST_UTILS_HPP
+#define BTFOREST_UTILS_HPP
 
 #include <string>
 #include <iostream>
 #include <fstream>
 #include <sstream>
 #include <regex>
+#include <unordered_set>
 #include "behaviortree_cpp/blackboard.h"
 #include "behaviortree_cpp/bt_factory.h"
 
@@ -15,6 +16,32 @@
 // {
 //   return b ? "true" : "false";
 // }
+
+static std::unordered_set<std::string> integral_types = 
+  {
+    BT::demangle(typeid(int64_t)),BT::demangle(typeid(uint64_t)),
+    BT::demangle(typeid(int32_t)),BT::demangle(typeid(uint32_t)),
+    BT::demangle(typeid(int16_t)),BT::demangle(typeid(uint16_t)),
+    BT::demangle(typeid(int8_t)),BT::demangle(typeid(uint8_t))
+  };
+
+static std::unordered_set<std::string> floating_number_types = 
+  {BT::demangle(typeid(double)),BT::demangle(typeid(float))};
+
+inline bool isStronglyTyped(const std::string& type_name)
+{
+  return type_name != BT::demangle(typeid(BT::AnyTypeAllowed)) && type_name != BT::demangle(typeid(BT::Any));
+}
+
+inline bool isNumberType(const std::string& type_name)
+{
+    return integral_types.count(type_name) || floating_number_types.count(type_name);
+}
+
+inline bool isIntegralType(const std::string& type_name)
+{
+    return integral_types.count(type_name);
+}
 
 inline std::string getTreeFullPath(const std::string& _file, const std::string& trees_folder_)
 {
@@ -60,7 +87,7 @@ inline bool loadXMLToString(const std::string& filename, std::string& output)
 
 inline std::vector<std::string> extractSyncKeys(std::string& input) {
     // Regular expression to match ${...}
-    std::regex pattern(R"(\$(\{([^}]+)\}))");
+    std::regex pattern(R"(\$\$(\{([^}]+)\}))");
     // Iterator to search for matches in the input string
     std::smatch matches;
 
@@ -70,7 +97,7 @@ inline std::vector<std::string> extractSyncKeys(std::string& input) {
     std::string::const_iterator searchStart(input.cbegin());
     while (std::regex_search(searchStart, input.cend(), matches, pattern)) {
         // The content inside the {...} will be in the second capture group (index 1)
-        std::cout << "Found SyncKey: " << matches[2] << std::endl;
+        std::cout << "Found Possible SyncKey: " << matches[2] << std::endl;
         sync_keys.push_back(matches[2]);
         // Move the search start to continue from the next match
         searchStart = matches.suffix().first;
@@ -78,6 +105,7 @@ inline std::vector<std::string> extractSyncKeys(std::string& input) {
 
     // Now replace the string ${...} with {...}
     input = std::regex_replace(input, pattern, R"({$2})");
+    std::cout << "XML without sync keys: " << input << std::endl; 
     return sync_keys;
 }
 /*

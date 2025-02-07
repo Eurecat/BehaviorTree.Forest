@@ -3,13 +3,15 @@
     <!-- ////////// -->
     <BehaviorTree ID="BehaviorTree">
         <Repeat num_cycles="-1">
-            <WaitValueUpdate entry="${in_switch}">
-                <Switch2 case_1="0" case_2="1" variable="${in_switch}">
-                    <AlwaysSuccess/>
-                    <AlwaysFailure/>
-                    <AlwaysFailure/>
-                </Switch2>
-            </WaitValueUpdate>
+            <ForceSuccess>
+                <WaitValueUpdate entry="$${in_switch}">
+                    <Switch2 case_1="0" case_2="1" variable="$${in_switch}">
+                        <AlwaysSuccess/>
+                        <AlwaysFailure/>
+                        <AlwaysFailure/>
+                    </Switch2>
+                </WaitValueUpdate>
+            </ForceSuccess>
         </Repeat>
     </BehaviorTree>
     <!-- ////////// -->

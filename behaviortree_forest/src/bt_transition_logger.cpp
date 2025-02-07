@@ -1,5 +1,8 @@
 #include "behaviortree_forest/bt_transition_logger.hpp"
 
+
+#include "behaviortree_eut_plugins/eut_utils.h"
+
 namespace BT_SERVER
 {
     RosTopicTransitionLogger::RosTopicTransitionLogger(const BT::Tree& tree, rclcpp::Publisher<Transition>::SharedPtr pub) : BT::StatusChangeLogger(tree.rootNode()), bt_transition_publisher_(pub)

@@ -1,4 +1,7 @@
 string key
 string type
 string value
-string bt_id
+
+# Information from the sender
+string bt_id # sender tree identifier
+uint64 sender_sequence_id # sender sequence id
