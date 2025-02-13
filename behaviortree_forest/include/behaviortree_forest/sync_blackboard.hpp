@@ -7,7 +7,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include "behaviortree_eut_plugins/eut_utils.h"
+#include "behaviortree_eut_plugins/utils/eut_utils.h"
 
 namespace BT_SERVER
 {
@@ -176,7 +176,7 @@ namespace BT_SERVER
               {
                 //valid candidate
                 std::string key = static_cast<std::string>(BT_SERVER::stripBlackboardPointer(boosted_key.substr(i, j-i+1), bb_shared_ptr_candidate));
-                const auto possible_str_value = BT::getEntryAsString(key, bb_ptr);
+                const auto possible_str_value = BT::EutUtils::getEntryAsString(key, bb_ptr);
                 if(possible_str_value)
                 {
                   res += possible_str_value.value();

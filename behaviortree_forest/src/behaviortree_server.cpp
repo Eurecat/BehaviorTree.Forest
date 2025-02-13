@@ -2,7 +2,7 @@
 #include "behaviortree_forest/behaviortree_server.hpp"
 
 
-#include "behaviortree_eut_plugins/eut_utils.h"
+#include "behaviortree_eut_plugins/utils/eut_utils.h"
 
 namespace BT_SERVER
 {
@@ -77,7 +77,7 @@ namespace BT_SERVER
       {
         const nlohmann::json json_value = nlohmann::json::parse(msg->value);
         RCLCPP_INFO(node_->get_logger(),"Sync port in SERVER BB for key [%s] with value parsed to json [%s] : type of parsed json [%s]", msg->key.c_str(), json_value.dump().c_str(), json_value.type_name());
-        const BT::JsonExporter::ExpectedEntry expected_entry = BT::eutFromJson(json_value);
+        const BT::JsonExporter::ExpectedEntry expected_entry = BT::EutUtils::eutFromJson(json_value);
         if(expected_entry.has_value())
         {
           RCLCPP_INFO(node_->get_logger(),"Sync port in SERVER BB for key [%s] with entry parsed from json [%s] : type [%s][%s]", msg->key.c_str(), json_value.dump().c_str(), 
@@ -441,7 +441,7 @@ namespace BT_SERVER
     {
       RCLCPP_INFO(node_->get_logger(), "Sync Key: '%s' ", key.c_str());
 
-      auto bb_entry_str = BT::getEntryAsString(key,sync_blackboard_ptr_);
+      auto bb_entry_str = BT::EutUtils::getEntryAsString(key,sync_blackboard_ptr_);
       if(bb_entry_str.has_value())
       {
           BBEntry bb_entry;

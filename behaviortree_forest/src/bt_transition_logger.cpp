@@ -1,7 +1,7 @@
 #include "behaviortree_forest/bt_transition_logger.hpp"
 
 
-#include "behaviortree_eut_plugins/eut_utils.h"
+#include "behaviortree_eut_plugins/utils/eut_utils.h"
 
 namespace BT_SERVER
 {

@@ -1,5 +1,5 @@
 #include "behaviortree_forest/tree_wrapper.hpp"
-#include "behaviortree_eut_plugins/eut_utils.h"
+#include "behaviortree_eut_plugins/utils/eut_utils.h"
 
 #include "yaml-cpp/yaml.h"
 
@@ -300,7 +300,7 @@ namespace BT_SERVER
             {
               
               const nlohmann::json json_value = nlohmann::json::parse(_single_upd.value);
-              const BT::JsonExporter::ExpectedEntry expected_entry = BT::eutFromJson(json_value);
+              const BT::JsonExporter::ExpectedEntry expected_entry = BT::EutUtils::eutFromJson(json_value);
               if(expected_entry.has_value())
               {
                 root_blackboard_->set(_single_upd.key, std::move(expected_entry.value().first));
@@ -555,9 +555,6 @@ namespace BT_SERVER
     for (auto& sync_entry_item : syncMap_)
     {
       const SyncEntry& sync_entry = sync_entry_item.second.getSafeCopy();
-      std::cout << "checkForToSyncEntries entry " << sync_entry_item.first << 
-        "\tstamp=" << std::to_string(sync_entry.entry->stamp.count()) <<
-        "\tlast_synced=" << std::to_string(sync_entry.last_synced.count()) << std::endl;
       if(root_blackboard_->entryInfo(sync_entry_item.first) == nullptr)
       {
         erased_entries.push_back(sync_entry_item.first);// erased entry

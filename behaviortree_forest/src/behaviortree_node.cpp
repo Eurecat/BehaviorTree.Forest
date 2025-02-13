@@ -1,5 +1,5 @@
 #include "behaviortree_forest/behaviortree_node.hpp"
-#include "behaviortree_eut_plugins/eut_utils.h"
+#include "behaviortree_eut_plugins/utils/eut_utils.h"
 #include <chrono>
 
 namespace BT_SERVER
@@ -139,7 +139,7 @@ namespace BT_SERVER
     {
       RCLCPP_INFO(node_->get_logger(), "sendBlackboardUpdate on key: %s", ser_entry.first.c_str());
       //Check Sync Value is initialized
-      auto val = BT::eutToJsonString(ser_entry.first, tree_wrapper_.rootBlackboard());
+      auto val = BT::EutUtils::eutToJsonString(ser_entry.first, tree_wrapper_.rootBlackboard());
       
       //if (val.has_value())
       {

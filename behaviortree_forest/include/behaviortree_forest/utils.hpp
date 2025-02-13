@@ -108,42 +108,8 @@ inline std::vector<std::string> extractSyncKeys(std::string& input) {
     std::cout << "XML without sync keys: " << input << std::endl; 
     return sync_keys;
 }
-/*
-bool JsonExporter::toJson(const Any& any, nlohmann::json& dst) const
-{
-  nlohmann::json json;
-  auto const& type = any.castedType();
 
-  if(any.isString())
-  {
-    dst = any.cast<std::string>();
-  }
-  else if(type == typeid(int64_t))
-  {
-    dst = any.cast<int64_t>();
-  }
-  else if(type == typeid(uint64_t))
-  {
-    dst = any.cast<uint64_t>();
-  }
-  else if(type == typeid(double))
-  {
-    dst = any.cast<double>();
-  }
-  else
-  {
-    auto it = to_json_converters_.find(type);
-    if(it != to_json_converters_.end())
-    {
-      it->second(any, dst);
-    }
-    else
-    {
-      return false;
-    }
-  }
-  return true;
-}*/
+/*
 inline BT::PortsList getPrimitivesTypesInfoDictionary()
 {
     BT::PortsList portListDict;
@@ -224,5 +190,7 @@ inline BT::TypeInfo createTypeInfoFromType(const std::string type)
     return BT::TypeInfo();
   }
 }
+
+*/
 
 #endif
