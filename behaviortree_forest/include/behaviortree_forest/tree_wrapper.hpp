@@ -23,9 +23,6 @@
 #include "behaviortree_forest/sync_blackboard.hpp"
 #include "behaviortree_forest/utils.hpp"
 
-// generated file
-#include "bt_executor_parameters.hpp"
-
 using TreeStatus = behaviortree_forest_interfaces::msg::TreeExecutionStatus;
 using Transition = behaviortree_forest_interfaces::msg::Transition;
 using BBEntry = behaviortree_forest_interfaces::msg::BBEntry;
@@ -109,8 +106,8 @@ namespace BT_SERVER
     std::shared_ptr<BT::DebuggableTree> debug_tree_ptr;
 
   private:
-    void loadPluginsFromROS(std::vector<std::string> ros_plugins_folders);
-    void loadPluginsFromFolder();
+    void loadPluginsFromROS(/*std::vector<std::string> ros_plugins_folders*/);
+    // void loadPluginsFromFolder();
 
     void initBBFromFile(const std::string& abs_file_path);
     void initGrootV2Pub();

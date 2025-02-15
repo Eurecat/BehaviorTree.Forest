@@ -1,0 +1,1 @@
+#define PARAM_NAME_SYNC_BB_INIT "sync_bb_init"

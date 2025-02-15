@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<root BTCPP_format="4" main_tree_to_execute="BehaviorTree">
+    <!-- ////////// -->
+    <BehaviorTree ID="BehaviorTree">
+        <KeepRunningUntilFailure>
+            <ForceSuccess>
+                <Sequence>
+                    <WasEntryUpdated entry="$${pos}"/>
+                    <FakeMoveBase pos="$${pos}"/>
+                </Sequence>
+            </ForceSuccess>
+        </KeepRunningUntilFailure>
+    </BehaviorTree>
+    <!-- ////////// -->
+    <TreeNodesModel>
+        <SubTree ID="BehaviorTree" description=""/>
+    </TreeNodesModel>
+    <!-- ////////// -->
+</root>

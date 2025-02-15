@@ -1,5 +1,8 @@
 #include "behaviortree_forest/behaviortree_node.hpp"
 #include "behaviortree_eut_plugins/utils/eut_utils.h"
+
+#include "behaviortree_forest/params/behaviortree_node_params.hpp"
+
 #include <chrono>
 
 namespace BT_SERVER
@@ -350,49 +353,49 @@ namespace BT_SERVER
   void BehaviorTreeNode::getParameters (rclcpp::Node::SharedPtr nh)
   {
     // Declare parameters
-    nh->declare_parameter("trees_folder", "src/behaviortree_server/behavior_trees");
-    nh->declare_parameter("enable_cout_log", true);
-    nh->declare_parameter("enable_minitrace_log", true);
-    nh->declare_parameter("enable_rostopic_log", true);
-    nh->declare_parameter("enable_file_log", true);
-    nh->declare_parameter("enable_zmq_log", true);
-    nh->declare_parameter("tree_name", "cross_door_name");
-    nh->declare_parameter("tree_file", "test_2.xml");
-    nh->declare_parameter("tree_uid", 0);
-    nh->declare_parameter("tree_debug", true);
-    nh->declare_parameter("tree_auto_restart", true);
-    nh->declare_parameter("server_port", 1667);
-    nh->declare_parameter("publisher_port", 1666);
-    nh->declare_parameter("log_folder", "/tmp/");
-    nh->declare_parameter("bb_init", std::vector<std::string>());
-    nh->declare_parameter("plugins_dir",std::vector<std::string>());
+    nh->declare_parameter(PARAM_NAME_TREES_FOLDER, "src/behaviortree_forest/behavior_trees");
+    nh->declare_parameter(PARAM_NAME_ENABLE_COUT_LOG, true);
+    nh->declare_parameter(PARAM_NAME_ENABLE_MINITRACE_LOG, true);
+    nh->declare_parameter(PARAM_NAME_ENABLE_ROSTOPIC_LOG, true);
+    nh->declare_parameter(PARAM_NAME_ENABLE_FILE_LOG, true);
+    nh->declare_parameter(PARAM_NAME_ENABLE_GROOT_LOG, true);
+    nh->declare_parameter(PARAM_NAME_TREE_NAME, "behaviortree");
+    nh->declare_parameter(PARAM_NAME_TREE_FILE, "behaviortree.xml");
+    nh->declare_parameter(PARAM_NAME_TREE_UID, 0);
+    nh->declare_parameter(PARAM_NAME_TREE_DEBUG, false);
+    nh->declare_parameter(PARAM_NAME_TREE_AUTORESTART, false);
+    nh->declare_parameter(PARAM_NAME_TREE_SERVER_PORT, 1667);
+    nh->declare_parameter(PARAM_NAME_TREE_PUBLISHER_PORT, 1666);
+    nh->declare_parameter(PARAM_NAME_TREE_LOG_FOLDER, "/tmp/");
+    nh->declare_parameter(PARAM_NAME_TREE_BB_INIT, std::vector<std::string>());
+    nh->declare_parameter(PARAM_NAME_TREE_ROS_PLUGINS_DIR,std::vector<std::string>());
 
-    nh->declare_parameter("loop_rate", 30);
+    nh->declare_parameter(PARAM_NAME_TREE_LOOP_RATE, 30);
 
     RCLCPP_INFO(nh->get_logger(),"Loading parameters");
       
     // Load Parameters
-    trees_folder_ = nh->get_parameter("trees_folder").as_string();
-    tree_name_= nh->get_parameter("tree_name").as_string();
-    tree_debug_ = nh->get_parameter("tree_debug").as_bool();
-    tree_auto_restart_ = nh->get_parameter("tree_auto_restart").as_bool();
+    trees_folder_ = nh->get_parameter(PARAM_NAME_TREES_FOLDER).as_string();
+    tree_name_= nh->get_parameter(PARAM_NAME_TREE_NAME).as_string();
+    tree_debug_ = nh->get_parameter(PARAM_NAME_TREE_DEBUG).as_bool();
+    tree_auto_restart_ = nh->get_parameter(PARAM_NAME_TREE_AUTORESTART).as_bool();
     tree_wrapper_.tree_name_ = tree_name_;
-    tree_wrapper_.tree_uid_ = nh->get_parameter("tree_uid").as_int();
-    tree_wrapper_.tree_filename_ = nh->get_parameter("tree_file").as_string();
-    tree_wrapper_.enable_cout_log_ = nh->get_parameter("enable_cout_log").as_bool();
-    tree_wrapper_.enable_minitrace_log_ = nh->get_parameter("enable_minitrace_log").as_bool();
-    tree_wrapper_.enable_rostopic_log_ = nh->get_parameter("enable_rostopic_log").as_bool();
-    tree_wrapper_.enable_file_log_ = nh->get_parameter("enable_file_log").as_bool();
-    tree_wrapper_.enable_zmq_log_ = nh->get_parameter("enable_zmq_log").as_bool();
-    tree_wrapper_.log_folder_ = nh->get_parameter("log_folder").as_string();
-    tree_wrapper_.tree_server_port_ = nh->get_parameter("server_port").as_int();
-    tree_wrapper_.tree_publisher_port_ = nh->get_parameter("publisher_port").as_int();
+    tree_wrapper_.tree_uid_ = nh->get_parameter(PARAM_NAME_TREE_UID).as_int();
+    tree_wrapper_.tree_filename_ = nh->get_parameter(PARAM_NAME_TREE_FILE).as_string();
+    tree_wrapper_.enable_cout_log_ = nh->get_parameter(PARAM_NAME_ENABLE_COUT_LOG).as_bool();
+    tree_wrapper_.enable_minitrace_log_ = nh->get_parameter(PARAM_NAME_ENABLE_MINITRACE_LOG).as_bool();
+    tree_wrapper_.enable_rostopic_log_ = nh->get_parameter(PARAM_NAME_ENABLE_ROSTOPIC_LOG).as_bool();
+    tree_wrapper_.enable_file_log_ = nh->get_parameter(PARAM_NAME_ENABLE_FILE_LOG).as_bool();
+    tree_wrapper_.enable_zmq_log_ = nh->get_parameter(PARAM_NAME_ENABLE_GROOT_LOG).as_bool();
+    tree_wrapper_.log_folder_ = nh->get_parameter(PARAM_NAME_TREE_LOG_FOLDER).as_string();
+    tree_wrapper_.tree_server_port_ = nh->get_parameter(PARAM_NAME_TREE_SERVER_PORT).as_int();
+    tree_wrapper_.tree_publisher_port_ = nh->get_parameter(PARAM_NAME_TREE_PUBLISHER_PORT).as_int();
     tree_wrapper_.params_.groot2_port = tree_wrapper_.tree_server_port_;
 
-    tree_wrapper_.ros_plugin_directories_ = node_->get_parameter("plugins_dir").as_string_array();
-    tree_wrapper_.ros_plugin_directories_.push_back("behaviortree_ros2/bt_plugins");
+    tree_wrapper_.ros_plugin_directories_ = node_->get_parameter(PARAM_NAME_TREE_ROS_PLUGINS_DIR).as_string_array();
+    // tree_wrapper_.ros_plugin_directories_.push_back("behaviortree_ros2/bt_plugins");
 
-    loop_rate_ = nh->get_parameter("loop_rate").as_int();
+    loop_rate_ = nh->get_parameter(PARAM_NAME_TREE_LOOP_RATE).as_int();
  
     //Build BB_init Vector (OLD WAY)
     /*std::string bb_init;
@@ -407,7 +410,7 @@ namespace BT_SERVER
     }*/
 
     //Build BB_init Vector (New WAY TO TEST)
-    tree_wrapper_.tree_bb_init_ = node_->get_parameter("bb_init").as_string_array();
+    tree_wrapper_.tree_bb_init_ = node_->get_parameter(PARAM_NAME_TREE_BB_INIT).as_string_array();
 
     RCLCPP_INFO(nh->get_logger(),"Parameters Loaded succesfully");
   }

@@ -1,0 +1,9 @@
+<root BTCPP_format="4">
+  <BehaviorTree ID="TEST">
+    <Sequence>
+        <PublishNodeStatus topic_name="/node_status" name="G" status="1"/>
+        <!-- Deserialization fails with the last one (MonitorNodeStatus)-->
+        <MonitorNodeStatus topic_name="/node_status" name="H" serialized_output="{output}"/>
+    </Sequence>
+  </BehaviorTree>
+</root>

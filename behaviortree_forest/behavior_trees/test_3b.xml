@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<root BTCPP_format="4" main_tree_to_execute="BehaviorTree">
+    <!-- ////////// -->
+    <BehaviorTree ID="BehaviorTree">
+        <Sequence>
+            <SetBlackboard output_key="pos" value="0.0;0.0" />
+            <KeepRunningUntilFailure>
+                <ForceSuccess>
+                    <Sequence>
+                        <UpdatePosition pos_in="$${pos}" x="0.1" y="0.2" pos_out="$${pos}"/>
+                        <Sleep msec="2500"/>
+                    </Sequence>
+                </ForceSuccess>
+            </KeepRunningUntilFailure>
+        </Sequence>
+    </BehaviorTree>
+    <!-- ////////// -->
+    <TreeNodesModel>
+        <SubTree ID="BehaviorTree" description=""/>
+    </TreeNodesModel>
+    <!-- ////////// -->
+</root>

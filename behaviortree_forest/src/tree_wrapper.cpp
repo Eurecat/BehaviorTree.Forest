@@ -278,7 +278,10 @@ namespace BT_SERVER
             //         tree_name_.c_str(), _single_upd.key.c_str(), type_info->typeName().c_str(), _single_upd.type.c_str());
             //     return; // type inconsistencies, don't update
             // }
-            
+             RCLCPP_INFO(node_->get_logger(),"[BTWrapper %s]::syncBBUpdateCB Trying to update sync port from SERVER for key [%s] with value [%s] : Accepted type %s, received %s", 
+                  tree_name_.c_str(),
+                  _single_upd.key.c_str(), _single_upd.value.c_str(),
+                 entry_ptr->info.typeName().c_str(), _single_upd.type.c_str());
             if(isStronglyTyped(_single_upd.type) && entry_ptr->info.isStronglyTyped() && _single_upd.type != entry_ptr->info.typeName())
             {
               if(entry_ptr->value.isNumber() && isNumberType(_single_upd.type))
@@ -288,10 +291,10 @@ namespace BT_SERVER
               else
               {
                 // unacceptable inconsistency
-                RCLCPP_ERROR(node_->get_logger(),"[BTWrapper %s]::syncBBUpdateCB Failed to update sync port from SERVER for key [%s] with value [%s] : Type inconsistency type %s, but received %s", 
+                RCLCPP_ERROR(node_->get_logger(),"[BTWrapper %s]::syncBBUpdateCB Failed to update sync port from SERVER for key [%s] with value [%s]; Type inconsistency: Accepted type %s, but received %s", 
                   tree_name_.c_str(),
                   _single_upd.key.c_str(), _single_upd.value.c_str(),
-                  _single_upd.type.c_str(), entry_ptr->info.typeName().c_str());
+                  entry_ptr->info.typeName().c_str(), _single_upd.type.c_str());
                 return;
               }
             }
@@ -415,66 +418,72 @@ namespace BT_SERVER
   void TreeWrapper::loadAllPlugins()
   {
       RCLCPP_INFO(node_->get_logger(),"LOADING PLUGINS");
-      loadPluginsFromROS(ros_plugin_directories_);
-      loadPluginsFromFolder();
+      loadPluginsFromROS(/*ros_plugin_directories_*/);
+      // loadPluginsFromFolder();
       RCLCPP_INFO(node_->get_logger(),"LOADED PLUGINS");
 
   }
 
-  void TreeWrapper::loadPluginsFromFolder()
-  {
-    bool import_from_folder = false;
-    node_->get_parameter_or("import_from_folder",import_from_folder,false);
+  // void TreeWrapper::loadPluginsFromFolder()
+  // {
+  //   bool import_from_folder = false;
+  //   node_->get_parameter_or("import_from_folder",import_from_folder,false);
 
-    if(import_from_folder)
-    {
-        RCLCPP_INFO(node_->get_logger(),"LOADING PLUGINS FROM FOLDER");
-        std::string plugins_folder;
-        if (!node_->get_parameter("plugins_folder",plugins_folder))
-        {
-            RCLCPP_WARN(node_->get_logger(),"Import from folder option is set, but folder param is missing");
-        }
-        else
-        {
-            using namespace boost::filesystem;
+  //   if(import_from_folder)
+  //   {
+  //       RCLCPP_INFO(node_->get_logger(),"LOADING PLUGINS FROM FOLDER");
+  //       std::string plugins_folder;
+  //       if (!node_->get_parameter("plugins_folder",plugins_folder))
+  //       {
+  //           RCLCPP_WARN(node_->get_logger(),"Import from folder option is set, but folder param is missing");
+  //       }
+  //       else
+  //       {
+  //           using namespace boost::filesystem;
 
-            if(!exists(plugins_folder))
-            {
-              RCLCPP_ERROR(node_->get_logger(),"Plugin folder %s does not exist.", plugins_folder.c_str());
-              return;
-            }
+  //           if(!exists(plugins_folder))
+  //           {
+  //             RCLCPP_ERROR(node_->get_logger(),"Plugin folder %s does not exist.", plugins_folder.c_str());
+  //             return;
+  //           }
 
-            auto directory_list = [&] { return boost::make_iterator_range(directory_iterator(plugins_folder), {}); };
+  //           auto directory_list = [&] { return boost::make_iterator_range(directory_iterator(plugins_folder), {}); };
 
-            for(const auto& entry : directory_list())
-            {
-                if((!is_regular_file(entry) && !is_symlink(entry)) || entry.path().extension() != ".so") { continue; }
+  //           for(const auto& entry : directory_list())
+  //           {
+  //               if((!is_regular_file(entry) && !is_symlink(entry)) || entry.path().extension() != ".so") { continue; }
 
-                try
-                {
-                  const auto& plugin_path = canonical(entry.path());
+  //               try
+  //               {
+  //                 const auto& plugin_path = canonical(entry.path());
 
-                  factory_.registerFromPlugin(plugin_path.string());
-                  loaded_plugins_.emplace(plugin_path.string());
-                  RCLCPP_INFO(node_->get_logger(),"Loaded plugin %s from folder %s", plugin_path.filename().string().c_str(), plugins_folder.c_str());
-                }
-                catch(const std::runtime_error& ex)
-                {
-                  RCLCPP_ERROR(node_->get_logger(),"Cannot load plugin %s from folder %s. Error: %s", entry.path().filename().string().c_str(), plugins_folder.c_str(), ex.what());
-                }
-            }
-        }
-        RCLCPP_INFO(node_->get_logger(),"LOADING PLUGINS FROM FOLDER OK");
-    }
-  }
+  //                 factory_.registerFromPlugin(plugin_path.string());
+  //                 loaded_plugins_.emplace(plugin_path.string());
+  //                 RCLCPP_INFO(node_->get_logger(),"Loaded plugin %s from folder %s", plugin_path.filename().string().c_str(), plugins_folder.c_str());
+  //               }
+  //               catch(const std::runtime_error& ex)
+  //               {
+  //                 RCLCPP_ERROR(node_->get_logger(),"Cannot load plugin %s from folder %s. Error: %s", entry.path().filename().string().c_str(), plugins_folder.c_str(), ex.what());
+  //               }
+  //           }
+  //       }
+  //       RCLCPP_INFO(node_->get_logger(),"LOADING PLUGINS FROM FOLDER OK");
+  //   }
+  // }
 
-  void TreeWrapper::loadPluginsFromROS(std::vector<std::string> ros_plugins_folders)
+  void TreeWrapper::loadPluginsFromROS(/*std::vector<std::string> ros_plugins_folders*/)
   {
       RCLCPP_INFO(node_->get_logger(),"LOADING PLUGINS FROM ROS");
 
+      // if empty, load all the findable ones
+      if(ros_plugin_directories_.empty())
+      {
+        ros_plugin_directories_ = getBTPluginsFolders(); // pkgname/bt_plugins
+      }
+
       bt_server::Params bt_params;
       bt_params.ros_plugins_timeout = 1000;
-      bt_params.plugins = ros_plugins_folders;
+      bt_params.plugins = ros_plugin_directories_;
       RegisterPlugins(bt_params, factory_, node_);
       for(const auto& plugin : bt_params.plugins)
       {

@@ -4,7 +4,7 @@ behaviortree_node:
     enable_cout_log: true
     enable_minitrace_log: true # Optional (defaults to 1667)
     enable_rostopic_log: true  # Optional (defaults 1000 ms)
-    enable_zmq_log: true
+    enable_groot_log: true
     tree_name: "test3_sync"
     tree_file: "test3_sync.xml"
     tree_uid: 2

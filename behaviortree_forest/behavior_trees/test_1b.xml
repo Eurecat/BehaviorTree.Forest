@@ -8,7 +8,7 @@
                     <Switch2 case_1="0" case_2="1" variable="$${in_switch}">
                         <AlwaysSuccess/>
                         <AlwaysFailure/>
-                        <AlwaysFailure/>
+                        <AlwaysFailure _skipIf="in_switch == 2" />
                     </Switch2>
                 </WaitValueUpdate>
             </ForceSuccess>

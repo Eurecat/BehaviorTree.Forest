@@ -1,7 +1,8 @@
 
 #include "behaviortree_forest/behaviortree_server.hpp"
 
-
+#include "behaviortree_ros2/bt_utils.hpp"
+#include "behaviortree_forest/params/behaviortree_server_params.hpp"
 #include "behaviortree_eut_plugins/utils/eut_utils.h"
 
 namespace BT_SERVER
@@ -10,6 +11,14 @@ namespace BT_SERVER
   {
     //Add nh to executor
     executor_.add_node(node_);
+
+
+      const auto ros_plugin_directories = getBTPluginsFolders(); // pkgname/bt_plugins
+
+      bt_server::Params bt_params;
+      bt_params.ros_plugins_timeout = 1000;
+      bt_params.plugins = ros_plugin_directories;
+      RegisterPlugins(bt_params, bt_factory_, node_);
 
     //Create Services:
     load_tree_srv_ = node_->create_service<LoadTreeSrv>("behavior_tree_forest/load_tree",std::bind(&BehaviorTreeServer::loadTreeCB,this,_1,_2));
@@ -24,9 +33,9 @@ namespace BT_SERVER
     get_all_trees_status_srv_ = node_->create_service<GetAllTreeStatusSrv>("behavior_tree_forest/get_all_trees_status",std::bind(&BehaviorTreeServer::getAllTreeStatusCB,this,_1,_2));
     
     //Create Sync_BB and Init
+    node_->declare_parameter(PARAM_NAME_SYNC_BB_INIT, "");
+    std::string sync_bb_init_file =node_->get_parameter(PARAM_NAME_SYNC_BB_INIT).as_string();
     sync_blackboard_ptr_ = BT::Blackboard::create();
-    std::string sync_bb_init_file;
-    if (!node_->get_parameter("sync_bb_init",sync_bb_init_file)){ sync_bb_init_file = ""; }
     if(sync_bb_init_file.length() > 0) { initBB(sync_bb_init_file, sync_blackboard_ptr_); }
 
     //Updates subscriber server side
@@ -65,7 +74,7 @@ namespace BT_SERVER
           else
           {
             // unacceptable inconsistency
-            RCLCPP_ERROR(node_->get_logger(),"Failed to update sync port in SERVER BB for key [%s] with value [%s] : Type inconsistency type %s, but received %s", 
+            RCLCPP_ERROR(node_->get_logger(),"yiled to update sync port in SERVER BB for key [%s] with value [%s] : Type inconsistency type %s, but received %s", 
               msg->key.c_str(), msg->value.c_str(),
               msg->type.c_str(), entry_ptr->info.typeName().c_str());
             return;

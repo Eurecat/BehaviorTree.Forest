@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<root BTCPP_format="4" main_tree_to_execute="BehaviorTree">
+    <!-- ////////// -->
+    <BehaviorTree ID="BehaviorTree">
+        <KeepRunningUntilFailure>
+            <ForceSuccess>
+                <Sequence>
+                    <WasEntryUpdated entry="$${rnd}"/>
+                    <AccessJsonField input="$${max_num_json}" field="/data" output="{max_num}"/>
+                    <IfThenElse>
+                        <ScriptCondition code="max_num > 12000"/>
+                        <Script code="max_num = max_num - rnd"/>
+                        <Script code="max_num = max_num + rnd"/>
+                    </IfThenElse>
+                    <PublishStdInt topic_name="/max_num" data="{max_num}" />
+                </Sequence>
+            </ForceSuccess>
+        </KeepRunningUntilFailure>
+    </BehaviorTree>
+    <!-- ////////// -->
+    <TreeNodesModel>
+        <SubTree ID="BehaviorTree" description=""/>
+    </TreeNodesModel>
+    <!-- ////////// -->
+</root>

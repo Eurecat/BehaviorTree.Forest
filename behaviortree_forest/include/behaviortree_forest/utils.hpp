@@ -11,6 +11,10 @@
 #include "behaviortree_cpp/bt_factory.h"
 
 
+#include <ament_index_cpp/get_resources.hpp>
+#include <ament_index_cpp/get_package_share_directory.hpp>
+#include <filesystem>
+
 // ASK DAVID why this?
 // inline std::string const boolToString(bool b)
 // {
@@ -192,5 +196,29 @@ inline BT::TypeInfo createTypeInfoFromType(const std::string type)
 }
 
 */
+
+inline std::vector<std::string> getBTPluginsFolders()
+{
+  std::vector<std::string> discovered_btplugins_folders;
+  std::map<std::string, std::string> packages = ament_index_cpp::get_resources("packages");
+  for (auto const& [pkg_name, ws_path] : packages) 
+  {
+      try 
+      {
+          std::string bt_plugins_path = ament_index_cpp::get_package_share_directory(pkg_name) + "/bt_plugins";
+
+          if (std::filesystem::exists(bt_plugins_path) && std::filesystem::is_directory(bt_plugins_path)) 
+          {
+            discovered_btplugins_folders.push_back(pkg_name + "/bt_plugins");
+          }
+      } catch (const std::exception &e) 
+      {
+          
+      }
+  }
+  return discovered_btplugins_folders;
+
+}
+
 
 #endif

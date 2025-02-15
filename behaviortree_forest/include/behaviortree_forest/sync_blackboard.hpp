@@ -37,16 +37,22 @@ namespace BT_SERVER
 
       SyncEntry() :
         entry(nullptr),
-        status(SyncStatus::SYNCED)
+        status(SyncStatus::SYNCED),
+        last_synced(std::chrono::nanoseconds{ -1 })
       {}
-
 
       SyncEntry(const std::shared_ptr<BT::Blackboard::Entry> entry_ptr, SyncStatus sync_status) :
         entry(entry_ptr),
         status(sync_status)
       {
-        last_synced = entry_ptr? entry_ptr->stamp - std::chrono::nanoseconds{1} : std::chrono::nanoseconds{ 0 };
+        last_synced = entry_ptr? entry_ptr->stamp :  std::chrono::nanoseconds {-1};
       }
+
+      SyncEntry(const std::shared_ptr<BT::Blackboard::Entry> entry_ptr, SyncStatus sync_status, std::chrono::nanoseconds synced) :
+        entry(entry_ptr),
+        status(sync_status),
+        last_synced(synced)
+      {}
 
       // Delete Copy Constructor (mutex is not copyable)
       SyncEntry(const SyncEntry&) = delete;
@@ -80,7 +86,7 @@ namespace BT_SERVER
       {
         std::scoped_lock lock_entry(sync_entry_mutex);
         status = sync_status;
-        if(status == SyncStatus::SYNCED) last_synced = std::chrono::steady_clock::now().time_since_epoch();
+        if(status == SyncStatus::SYNCED) last_synced = entry->stamp;
         return true;
       }
 
@@ -91,7 +97,7 @@ namespace BT_SERVER
         if(expected_sync_status == status)
         {
           status = new_sync_status;
-          if(status == SyncStatus::SYNCED) last_synced = std::chrono::steady_clock::now().time_since_epoch();
+          if(status == SyncStatus::SYNCED) last_synced = entry->stamp;
           return true;
         }
         else
@@ -110,7 +116,7 @@ namespace BT_SERVER
       SyncEntry getSafeCopy() const
       {
         std::scoped_lock lock_entry(sync_entry_mutex);
-        return SyncEntry(entry, status);
+        return SyncEntry(entry, status, last_synced);
       }
     };
 

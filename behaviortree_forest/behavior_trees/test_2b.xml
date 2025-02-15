@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<root BTCPP_format="4" main_tree_to_execute="BehaviorTree">
+    <!-- ////////// -->
+    <BehaviorTree ID="BehaviorTree">
+        <KeepRunningUntilFailure>
+            <ForceSuccess>
+                <Sequence>
+                    <MonitorStdInt topic_name="/max_num" serialized_output="$${max_num_json}"/>
+                    <AccessJsonField input="$${max_num_json}" field="/data" output="{max_num}"/>
+                    <Sleep msec="500"/>
+                    <RandomInt max="{max_num}" min="0" result="$${rnd}"/>
+                </Sequence>
+            </ForceSuccess>
+        </KeepRunningUntilFailure>
+    </BehaviorTree>
+    <!-- ////////// -->
+    <TreeNodesModel>
+        <SubTree ID="BehaviorTree" description=""/>
+    </TreeNodesModel>
+    <!-- ////////// -->
+</root>
