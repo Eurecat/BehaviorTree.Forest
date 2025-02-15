@@ -23,6 +23,12 @@
 #include "behaviortree_forest/sync_blackboard.hpp"
 #include "behaviortree_forest/utils.hpp"
 
+<<<<<<< HEAD
+=======
+// generated file
+//#include "bt_executor_parameters.hpp"
+
+>>>>>>> origin/humble
 using TreeStatus = behaviortree_forest_interfaces::msg::TreeExecutionStatus;
 using Transition = behaviortree_forest_interfaces::msg::Transition;
 using BBEntry = behaviortree_forest_interfaces::msg::BBEntry;
