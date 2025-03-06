@@ -6,6 +6,8 @@
 #include "std_srvs/srv/empty.hpp"
 #include "std_srvs/srv/trigger.hpp"
 
+#include "behaviortree_eut_plugins/eut_factory.h"
+
 #include "behaviortree_forest_interfaces/msg/bb_entry.hpp"
 #include "behaviortree_forest_interfaces/msg/tree_execution_status.hpp"
 
@@ -140,20 +142,21 @@ namespace BT_SERVER
       //Sync BB
       BT::Blackboard::Ptr sync_blackboard_ptr_;
 
-      //BT_FACTORY
-      BT::BehaviorTreeFactory bt_factory_;
-
+      
       //Save Spawned Trees information
       std::map <unsigned int, TreeProcessInfo> uids_to_tree_info_;
-
+      
       //Manage spawn Process using ROS2 LAUNCH command
       ROS2LaunchManager ros2_launch_manager_;
-
+      
       //Manage Trees_UIDs
       unsigned int trees_UID_ = 0;
-
+      
       rclcpp::Node::SharedPtr node_ ;
       rclcpp::executors::MultiThreadedExecutor executor_;
+
+      //BT_FACTORY
+      BT::EutBehaviorTreeFactory eut_bt_factory_;
   };
 }
 #endif

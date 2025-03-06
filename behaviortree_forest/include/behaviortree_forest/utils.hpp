@@ -6,7 +6,6 @@
 #include <fstream>
 #include <sstream>
 #include <regex>
-#include <unordered_set>
 #include "behaviortree_cpp/blackboard.h"
 #include "behaviortree_cpp/bt_factory.h"
 
@@ -20,32 +19,6 @@
 // {
 //   return b ? "true" : "false";
 // }
-
-static std::unordered_set<std::string> integral_types = 
-  {
-    BT::demangle(typeid(int64_t)),BT::demangle(typeid(uint64_t)),
-    BT::demangle(typeid(int32_t)),BT::demangle(typeid(uint32_t)),
-    BT::demangle(typeid(int16_t)),BT::demangle(typeid(uint16_t)),
-    BT::demangle(typeid(int8_t)),BT::demangle(typeid(uint8_t))
-  };
-
-static std::unordered_set<std::string> floating_number_types = 
-  {BT::demangle(typeid(double)),BT::demangle(typeid(float))};
-
-inline bool isStronglyTyped(const std::string& type_name)
-{
-  return type_name != BT::demangle(typeid(BT::AnyTypeAllowed)) && type_name != BT::demangle(typeid(BT::Any));
-}
-
-inline bool isNumberType(const std::string& type_name)
-{
-    return integral_types.count(type_name) || floating_number_types.count(type_name);
-}
-
-inline bool isIntegralType(const std::string& type_name)
-{
-    return integral_types.count(type_name);
-}
 
 inline std::string getTreeFullPath(const std::string& _file, const std::string& trees_folder_)
 {

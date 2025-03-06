@@ -11,6 +11,7 @@ namespace BT_SERVER
     node_(node), 
     executor_(rclcpp::executors::MultiThreadedExecutor(rclcpp::ExecutorOptions(), 2))
   {
+    std::cout << "BehaviorTreeNode " << "\n" << std::flush;
     srv_cb_group_ = node_->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
     bb_upd_cb_group_ = node_->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
 
@@ -49,7 +50,8 @@ namespace BT_SERVER
 
       //Load Tree
       if (!loadTree()) {return;}
-
+      tree_wrapper_.rootBlackboard()->debugMessage();
+      
       RCLCPP_INFO(node_->get_logger(),"Tree loaded OK");
 
       executor_.add_node(node_);
@@ -88,6 +90,7 @@ namespace BT_SERVER
     {
       RCLCPP_INFO(node_->get_logger(),"Creating tree from file %s", full_path.c_str());
       tree_wrapper_.createTree(full_path,tree_debug_);
+      tree_wrapper_.rootBlackboard()->debugMessage();
     }
     catch(const std::runtime_error& ex)
     {
@@ -143,19 +146,29 @@ namespace BT_SERVER
       RCLCPP_INFO(node_->get_logger(), "sendBlackboardUpdate on key: %s", ser_entry.first.c_str());
       //Check Sync Value is initialized
       auto val = BT::EutUtils::eutToJsonString(ser_entry.first, tree_wrapper_.rootBlackboard());
-      
+
       //if (val.has_value())
       {
         BBEntry bb_entry_msg;
         bb_entry_msg.key = ser_entry.first;
-        bb_entry_msg.type = ser_entry.second.entry->info.typeName();
+        bb_entry_msg.type = BT::demangle(ser_entry.second.entry->info.type()); //ser_entry.second.entry->info.typeName();
+       
         if (val.has_value())
+        {
           bb_entry_msg.value = val.value();
+          // if(ser_entry.second.entry->info.type() == typeid(std::string))
+          // {
+          //   if (!bb_entry_msg.value.empty() && bb_entry_msg.value.front() == '"' && bb_entry_msg.value.back() == '"') 
+          //   {
+          //     bb_entry_msg.value = bb_entry_msg.value.substr(1, bb_entry_msg.value.size() - 2);
+          //   }
+          // }
+
+          RCLCPP_INFO(node_->get_logger(), "sendBlackboardUpdate on key: %s, its value as a stringified json will be like %s and if I try to convert it back to json its type is now %s", 
+            ser_entry.first.c_str(), bb_entry_msg.value.c_str(), nlohmann::json::parse(val.value()).type_name());
+        }
         else
           bb_entry_msg.value = "";
-        if (val.has_value())
-          RCLCPP_INFO(node_->get_logger(), "sendBlackboardUpdate on key: %s, its value as a stringified json will be like %s and if I try to convert it back to json its type is now %s", 
-          ser_entry.first.c_str(), bb_entry_msg.value.c_str(), nlohmann::json::parse(bb_entry_msg.value).type_name());
         bb_entry_msg.bt_id = tree_name_;
         bb_entry_msg.sender_sequence_id = ser_entry.second.entry->sequence_id;
         
@@ -352,6 +365,7 @@ namespace BT_SERVER
 
   void BehaviorTreeNode::getParameters (rclcpp::Node::SharedPtr nh)
   {
+    std::cout << "getParameters " << "\n" << std::flush;
     // Declare parameters
     nh->declare_parameter(PARAM_NAME_TREES_FOLDER, "src/behaviortree_forest/behavior_trees");
     nh->declare_parameter(PARAM_NAME_ENABLE_COUT_LOG, true);
@@ -392,9 +406,11 @@ namespace BT_SERVER
     tree_wrapper_.tree_publisher_port_ = nh->get_parameter(PARAM_NAME_TREE_PUBLISHER_PORT).as_int();
     tree_wrapper_.params_.groot2_port = tree_wrapper_.tree_server_port_;
 
+    std::cout << "Fetching " << PARAM_NAME_TREE_ROS_PLUGINS_DIR << "\n" << std::flush;
     tree_wrapper_.ros_plugin_directories_ = node_->get_parameter(PARAM_NAME_TREE_ROS_PLUGINS_DIR).as_string_array();
     // tree_wrapper_.ros_plugin_directories_.push_back("behaviortree_ros2/bt_plugins");
 
+    std::cout << "Fetching " << PARAM_NAME_TREE_LOOP_RATE << "\n" << std::flush;
     loop_rate_ = nh->get_parameter(PARAM_NAME_TREE_LOOP_RATE).as_int();
  
     //Build BB_init Vector (OLD WAY)
@@ -410,6 +426,7 @@ namespace BT_SERVER
     }*/
 
     //Build BB_init Vector (New WAY TO TEST)
+    std::cout << "Fetching " << PARAM_NAME_TREE_BB_INIT << "\n" << std::flush;
     tree_wrapper_.tree_bb_init_ = node_->get_parameter(PARAM_NAME_TREE_BB_INIT).as_string_array();
 
     RCLCPP_INFO(nh->get_logger(),"Parameters Loaded succesfully");

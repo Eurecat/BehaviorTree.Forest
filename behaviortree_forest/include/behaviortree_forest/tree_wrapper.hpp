@@ -10,6 +10,8 @@
 #include <behaviortree_cpp/loggers/bt_minitrace_logger.h>
 #include <behaviortree_eut_plugins/loggers/bt_zmq_publisher.h>
 
+#include "behaviortree_eut_plugins/eut_factory.h"
+
 #include "behaviortree_forest/bt_transition_logger.hpp"
 #include "behaviortree_ros2/bt_utils.hpp"
 
@@ -23,12 +25,6 @@
 #include "behaviortree_forest/sync_blackboard.hpp"
 #include "behaviortree_forest/utils.hpp"
 
-<<<<<<< HEAD
-=======
-// generated file
-//#include "bt_executor_parameters.hpp"
-
->>>>>>> origin/humble
 using TreeStatus = behaviortree_forest_interfaces::msg::TreeExecutionStatus;
 using Transition = behaviortree_forest_interfaces::msg::Transition;
 using BBEntry = behaviortree_forest_interfaces::msg::BBEntry;
@@ -45,7 +41,7 @@ namespace BT_SERVER
     rclcpp::Node::SharedPtr node() { return node_; }
     const BT::Tree& tree() const { return *tree_ptr_; }
     BT::Blackboard::Ptr rootBlackboard() { return root_blackboard_; }
-    BT::BehaviorTreeFactory& factory() { return factory_; }
+    BT::BehaviorTreeFactory& factory() { return eut_bt_factory_.originalFactory(); }
     BT::NodeAdvancedStatus tickTree();
 
     void loadAllPlugins();
@@ -120,9 +116,9 @@ namespace BT_SERVER
     void resetLoggers();
     BT::NodeAdvancedStatus toAdvancedNodeStatus (BT::NodeStatus status);
     rclcpp::Node::SharedPtr node_;
+    BT::EutBehaviorTreeFactory eut_bt_factory_;
     std::shared_ptr<BT::Tree> tree_ptr_;
 
-    BT::BehaviorTreeFactory factory_;
     BT::Blackboard::Ptr root_blackboard_;
 
     bool executed_{false};

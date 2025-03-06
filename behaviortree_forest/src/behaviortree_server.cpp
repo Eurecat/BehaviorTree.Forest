@@ -7,19 +7,23 @@
 
 namespace BT_SERVER
 {
-  BehaviorTreeServer::BehaviorTreeServer(const rclcpp::Node::SharedPtr& node) : node_(node) 
+  BehaviorTreeServer::BehaviorTreeServer(const rclcpp::Node::SharedPtr& node) : 
+    node_(node), eut_bt_factory_(BT::EutBehaviorTreeFactory(std::make_shared<BT::BehaviorTreeFactory>()))
   {
     //Add nh to executor
     executor_.add_node(node_);
 
 
-      const auto ros_plugin_directories = getBTPluginsFolders(); // pkgname/bt_plugins
+    const auto ros_plugin_directories = getBTPluginsFolders(); // pkgname/bt_plugins
 
-      bt_server::Params bt_params;
-      bt_params.ros_plugins_timeout = 1000;
-      bt_params.plugins = ros_plugin_directories;
-      RegisterPlugins(bt_params, bt_factory_, node_);
-
+    bt_server::Params bt_params;
+    bt_params.ros_plugins_timeout = 5000;
+    bt_params.plugins = ros_plugin_directories;
+    std::cout << "BehaviorTreeServer About to register plugins\n" << std::endl;
+    RegisterPlugins(bt_params, eut_bt_factory_.originalFactory(), node_);
+    std::cout << "BehaviorTreeServer plugins registered okay\n" << std::endl;
+    eut_bt_factory_.updateTypeInfoMap();
+    std::cout << "BehaviorTreeServer updated typeinfo map\n" << std::endl;
     //Create Services:
     load_tree_srv_ = node_->create_service<LoadTreeSrv>("behavior_tree_forest/load_tree",std::bind(&BehaviorTreeServer::loadTreeCB,this,_1,_2));
     stop_tree_srv_ = node_->create_service<TreeRequestSrv>("behavior_tree_forest/stop_tree",std::bind(&BehaviorTreeServer::stopTreeCB,this,_1,_2));
@@ -62,19 +66,27 @@ namespace BT_SERVER
     {
       auto entry_ptr = sync_blackboard_ptr_->getEntry(msg->key);
 
+      if(!entry_ptr || !entry_ptr->info.isStronglyTyped() && BT::isStronglyTyped(msg->type)) // entry does not exist or existed with no type and now I know type
+      {
+        sync_blackboard_ptr_->unset(msg->key);
+        BT::TypeInfo type_info = eut_bt_factory_.getTypeInfo(msg->type).value_or(BT::TypeInfo()); // fallback to AnyTypeAllowed
+        sync_blackboard_ptr_->createEntry(msg->key, type_info);
+        entry_ptr = sync_blackboard_ptr_->getEntry(msg->key); // update entry ptr
+      }
+
       // type safety checks
       if(entry_ptr)
       { 
-        if(isStronglyTyped(msg->type) && entry_ptr->info.isStronglyTyped() && msg->type != entry_ptr->info.typeName())
+        if(BT::isStronglyTyped(msg->type) && entry_ptr->info.isStronglyTyped() && msg->type != entry_ptr->info.typeName())
         {
-          if(entry_ptr->value.isNumber() && isNumberType(msg->type))
+          if(entry_ptr->value.isNumber() && BT::isNumberType(msg->type))
           {
             // will be treated later within the library in the blackboard->set(...) call and might be still acceptable
           }
           else
           {
             // unacceptable inconsistency
-            RCLCPP_ERROR(node_->get_logger(),"yiled to update sync port in SERVER BB for key [%s] with value [%s] : Type inconsistency type %s, but received %s", 
+            RCLCPP_ERROR(node_->get_logger(),"Failed to update sync port in SERVER BB for key [%s] with value [%s] : Type inconsistency type %s, but received %s", 
               msg->key.c_str(), msg->value.c_str(),
               msg->type.c_str(), entry_ptr->info.typeName().c_str());
             return;
@@ -84,16 +96,29 @@ namespace BT_SERVER
 
       try
       {
-        const nlohmann::json json_value = nlohmann::json::parse(msg->value);
-        RCLCPP_INFO(node_->get_logger(),"Sync port in SERVER BB for key [%s] with value parsed to json [%s] : type of parsed json [%s]", msg->key.c_str(), json_value.dump().c_str(), json_value.type_name());
-        const BT::JsonExporter::ExpectedEntry expected_entry = BT::EutUtils::eutFromJson(json_value);
-        if(expected_entry.has_value())
+
+        BT::JsonExporter::ExpectedEntry expected_entry = {};
+        if(!entry_ptr || !BT::isStronglyTyped(msg->type))
         {
-          RCLCPP_INFO(node_->get_logger(),"Sync port in SERVER BB for key [%s] with entry parsed from json [%s] : type [%s][%s]", msg->key.c_str(), json_value.dump().c_str(), 
-            BT::demangle(expected_entry.value().first.type()).c_str(), expected_entry.value().second.typeName().c_str());
-          sync_blackboard_ptr_->set(msg->key, std::move(expected_entry.value().first));
+          if(!msg->value.empty()) sync_blackboard_ptr_->set(msg->key, msg->value); // no type and stringified value both side
+          else return; // no type, no value
         }
-      
+        else
+        {
+          const nlohmann::json json_value = nlohmann::json::parse(msg->value);
+          RCLCPP_INFO(node_->get_logger(),"Sync port in SERVER BB for key [%s] with value parsed to json [%s] : type of parsed json [%s]", msg->key.c_str(), json_value.dump().c_str(), json_value.type_name());
+          
+          const BT::JsonExporter::ExpectedEntry expected_entry = BT::EutUtils::eutFromJson(json_value, entry_ptr->info.type());
+          if(expected_entry.has_value())
+          {
+            RCLCPP_INFO(node_->get_logger(),"Sync port in SERVER BB for key [%s] with entry parsed from json [%s] : type [%s][%s]", msg->key.c_str(), json_value.dump().c_str(), 
+              BT::demangle(expected_entry.value().first.type()).c_str(), expected_entry.value().second.typeName().c_str());
+            sync_blackboard_ptr_->set(msg->key, std::move(expected_entry.value().first));
+            RCLCPP_INFO(node_->get_logger(),"Synced port in SERVER BB for key [%s] with entry parsed from json [%s] : type [%s][%s]", msg->key.c_str(), json_value.dump().c_str(), 
+              BT::demangle(expected_entry.value().first.type()).c_str(), expected_entry.value().second.typeName().c_str());
+          }
+        }
+        
       }
       catch(const std::exception& e)
       {
@@ -223,20 +248,20 @@ namespace BT_SERVER
     std::string param_auto_restart = "tree_auto_restart:="+BT::toStr(req->auto_restart);
     std::string param_debug ="tree_debug:="+BT::toStr(req->debug);
 
-    std::string param_bb_init = "tree_bb_init:=\\'";
+    std::string param_bb_init = "";
     if (req->bb_init_files.size()> 0)
     {
-        param_bb_init += "[";
+        param_bb_init += "bb_init:=[";
         for (long unsigned int i = 0; i < req->bb_init_files.size(); i++)
         {
-            param_bb_init += req->bb_init_files[i];
+            param_bb_init += "\'" + req->bb_init_files[i] + "\'";
             if (i != (req->bb_init_files.size()-1))
                   param_bb_init += ",";
         }
-        param_bb_init += "]\\'";
+        param_bb_init += "]";
     }
-    else
-        param_bb_init += "[]\\'";
+
+    fprintf(stderr, "bb_init c_str %s\n", param_bb_init.c_str());
 
     //Set default port IDs
     int server_port = 1667;
@@ -257,20 +282,36 @@ namespace BT_SERVER
     const char* package_name = "behaviortree_forest"; 
     const char* executable_name = "behaviortree_node";
     try {
-      pid = ros2_launch_manager_.start(
-            package_name,
-            executable_name,
-            "--ros-args",
-            "-r", param_node_name.c_str(),
-            "-p", param_name.c_str(),
-            "-p", param_file.c_str(),
-            "-p", param_uid.c_str(),
-            "-p", param_debug.c_str(),
-            "-p", param_auto_restart.c_str(),
-            "-p", param_bb_init.c_str(),
-            "-p", param_server_port.c_str(),
-            "-p", param_pub_port.c_str()
-            );
+      if(param_bb_init.empty())
+        pid = ros2_launch_manager_.start(
+          package_name,
+          executable_name,
+          "--ros-args",
+          "-r", param_node_name.c_str(),
+          "-p", param_name.c_str(),
+          "-p", param_file.c_str(),
+          "-p", param_uid.c_str(),
+          "-p", param_debug.c_str(),
+          "-p", param_auto_restart.c_str(),
+          // "-p", param_bb_init.c_str(), // bug to be understand in how ros2 parse this empty vector of string when it's passed such as []
+          "-p", param_server_port.c_str(),
+          "-p", param_pub_port.c_str()
+          );
+      else
+        pid = ros2_launch_manager_.start(
+              package_name,
+              executable_name,
+              "--ros-args",
+              "-r", param_node_name.c_str(),
+              "-p", param_name.c_str(),
+              "-p", param_file.c_str(),
+              "-p", param_uid.c_str(),
+              "-p", param_debug.c_str(),
+              "-p", param_auto_restart.c_str(),
+              "-p", param_bb_init.c_str(),
+              "-p", param_server_port.c_str(),
+              "-p", param_pub_port.c_str()
+              );
     }
     catch (std::exception const &exception) {
       RCLCPP_ERROR(node_->get_logger(),"Error using ros2 run manager: %s", exception.what());
@@ -455,7 +496,7 @@ namespace BT_SERVER
       {
           BBEntry bb_entry;
           bb_entry.key = key;
-          bb_entry.type = sync_blackboard_ptr_->getEntry(key)->info.typeName();
+          bb_entry.type = BT::demangle(sync_blackboard_ptr_->getEntry(key)->info.type()); //sync_blackboard_ptr_->getEntry(key)->info.typeName();
           bb_entry.value = bb_entry_str.value();
           bb_entry.bt_id = ""; //Empty BT_ID for BTServer requests
           res->entries.push_back(bb_entry);
@@ -522,12 +563,19 @@ namespace BT_SERVER
                 continue; // and skip this init
             }
             else
-                bb_val = bbentry_value_inferred_keyvalues.value();
-
-            RCLCPP_INFO(node_->get_logger(), "Init. BB key [\"%s\"] with value \"%s\"", bb_key.c_str(), bb_val.c_str());
-            // use the string here and blackboard_ptr->set(...)
-            blackboard_ptr->set(bb_key, bb_val);
-        }
+            {
+              bb_val = bbentry_value_inferred_keyvalues.value();
+              
+              // use the string here and blackboard_ptr->set(...)
+              blackboard_ptr->set(bb_key, bb_val);
+              const auto entry_n = blackboard_ptr->getEntry(bb_key);
+              RCLCPP_INFO(node_->get_logger(), "Init. BB key [\"%s\"] with value \"%s\" et %s t %s, ct %s", 
+              bb_key.c_str(), bb_val.c_str(),
+              BT::demangle(entry_n->info.type()).c_str(),
+              BT::demangle(entry_n->value.type()).c_str(), BT::demangle(entry_n->value.castedType()).c_str());
+        
+            }
+        }  
         RCLCPP_INFO(node_->get_logger(), "Initialized BB with %ld entries from YAML file %s", blackboard_ptr->getKeys().size(), abs_file_path.c_str());
     }
     catch(const YAML::Exception& ex) 

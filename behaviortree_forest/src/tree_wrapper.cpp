@@ -6,7 +6,7 @@
 namespace BT_SERVER
 {
   TreeWrapper::TreeWrapper(const rclcpp::Node::SharedPtr& node)
-    : node_(node), tree_ptr_(nullptr)
+    : node_(node), eut_bt_factory_(BT::EutBehaviorTreeFactory(std::make_shared<BT::BehaviorTreeFactory>())), tree_ptr_(nullptr)
   {
     root_blackboard_ = BT::Blackboard::create();
   }
@@ -282,9 +282,9 @@ namespace BT_SERVER
                   tree_name_.c_str(),
                   _single_upd.key.c_str(), _single_upd.value.c_str(),
                  entry_ptr->info.typeName().c_str(), _single_upd.type.c_str());
-            if(isStronglyTyped(_single_upd.type) && entry_ptr->info.isStronglyTyped() && _single_upd.type != entry_ptr->info.typeName())
+            if(BT::isStronglyTyped(_single_upd.type) && entry_ptr->info.isStronglyTyped() && _single_upd.type != entry_ptr->info.typeName())
             {
-              if(entry_ptr->value.isNumber() && isNumberType(_single_upd.type))
+              if(entry_ptr->value.isNumber() && BT::isNumberType(_single_upd.type))
               {
                 // will be treated later within the library in the blackboard->set(...) call and might be still acceptable
               }
@@ -301,12 +301,33 @@ namespace BT_SERVER
 
             try
             {
-              
-              const nlohmann::json json_value = nlohmann::json::parse(_single_upd.value);
-              const BT::JsonExporter::ExpectedEntry expected_entry = BT::EutUtils::eutFromJson(json_value);
-              if(expected_entry.has_value())
+              BT::JsonExporter::ExpectedEntry expected_entry = {};
+              if(!BT::isStronglyTyped(_single_upd.type) && entry_ptr->info.isStronglyTyped())
               {
-                root_blackboard_->set(_single_upd.key, std::move(expected_entry.value().first));
+                BT::Any any = (entry_ptr->info.converter())(_single_upd.value);
+                root_blackboard_->set(_single_upd.key, std::move(any));
+                // if(_single_upd.value.empty()) return;
+              }
+              else if(!BT::isStronglyTyped(_single_upd.type) && !entry_ptr->info.isStronglyTyped())
+              {
+                if(!_single_upd.value.empty()) root_blackboard_->set<BT::Any>(_single_upd.key, std::move(BT::Any(_single_upd.value))); // no type and stringified value both side (maintain unknown type)
+                else return; // no type, no value
+              }
+              else
+              {
+                const nlohmann::json json_value = nlohmann::json::parse(_single_upd.value);
+                expected_entry = BT::EutUtils::eutFromJson(json_value, entry_ptr->info.type());
+                if(expected_entry.has_value()) root_blackboard_->set(_single_upd.key, std::move(expected_entry.value().first));
+                else 
+                  RCLCPP_INFO(node_->get_logger(),"[BTWrapper %s]::syncBBUpdateCB Failed to update sync port from SERVER for key [%s] with value [%s] not expected %s", 
+                  tree_name_.c_str(),
+                  _single_upd.key.c_str(), _single_upd.value.c_str(),
+                  expected_entry.error().c_str());
+              }
+
+              // if(expected_entry.has_value())
+              // {
+              //   root_blackboard_->set(_single_upd.key, std::move(expected_entry.value().first));
                 // if(entry_ptr->info.isStronglyTyped())
                 // {
                 //     // convert from string new value
@@ -319,7 +340,7 @@ namespace BT_SERVER
                 // }
                 // else
                 //     root_blackboard_->set(_single_upd.key, _single_upd.value);
-              }
+              // }
             
             }
             catch(const std::exception& e)
@@ -482,9 +503,11 @@ namespace BT_SERVER
       }
 
       bt_server::Params bt_params;
-      bt_params.ros_plugins_timeout = 1000;
+      bt_params.ros_plugins_timeout = 5000;
       bt_params.plugins = ros_plugin_directories_;
-      RegisterPlugins(bt_params, factory_, node_);
+      RegisterPlugins(bt_params, eut_bt_factory_.originalFactory(), node_);
+      eut_bt_factory_.updateTypeInfoMap();
+      
       for(const auto& plugin : bt_params.plugins)
       {
         //RCLCPP_INFO(node_->get_logger(),"Added directory %s",plugin.c_str());
@@ -495,16 +518,17 @@ namespace BT_SERVER
   
   void TreeWrapper::initBB()
   {
-    RCLCPP_INFO(node_->get_logger(),"CREATING BB");
+    RCLCPP_INFO(node_->get_logger(),"CREATING BB with %ld init files", tree_bb_init_.size());
+    int init_bb_counter = 0;
     if (tree_bb_init_.size() > 0)
     {
       for(const auto& bb_init_abs_filepath: tree_bb_init_)
       {
           if(bb_init_abs_filepath.length() < 3) continue;
-          initBBFromFile(bb_init_abs_filepath);
+          initBBFromFile(bb_init_abs_filepath);init_bb_counter++;
       }
     }
-    RCLCPP_INFO(node_->get_logger(),"CREATING BB OK");
+    RCLCPP_INFO(node_->get_logger(),"CREATING BB with %d init files OK", init_bb_counter);
   }
   
   void TreeWrapper::initBBFromFile(const std::string& abs_file_path)
@@ -590,7 +614,7 @@ namespace BT_SERVER
       //Extract SyncKeys from the XML Tree and Replace '$${key}' --> '${key}'
       sync_keys = extractSyncKeys(tree_xml);
       //Create the tree
-      tree_ptr_ = std::make_shared<BT::Tree> (factory_.createTreeFromText(tree_xml,root_blackboard_));
+      tree_ptr_ = std::make_shared<BT::Tree> (eut_bt_factory_.originalFactory().createTreeFromText(tree_xml,root_blackboard_));
 
       start_execution_time_ = node_->get_clock()->now();
 
@@ -628,7 +652,7 @@ namespace BT_SERVER
           // (!sync_entry_cp.entry->value.empty() || !BT::missingTypeInfo(sync_entry_cp.entry->info.type())) && // shall be not empty or shall have at least a type to be shared 
           sync_entry_cp.status == SyncStatus::TO_SYNC || sync_entry_cp.status == SyncStatus::SYNCING)
       {
-        std::cout << "getKeysValueToSync select " << element.first << std::endl;
+        std::cout << "getKeysValueToSync select " << element.first << " type = " << BT::demangle(element.second.entry->info.type()) <<  std::endl;
         ports_to_be_sync_cpy.emplace(element.first, std::move(sync_entry_cp));
       }
     }
