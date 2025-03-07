@@ -74,7 +74,6 @@ inline std::vector<std::string> extractSyncKeys(std::string& input) {
     std::string::const_iterator searchStart(input.cbegin());
     while (std::regex_search(searchStart, input.cend(), matches, pattern)) {
         // The content inside the {...} will be in the second capture group (index 1)
-        std::cout << "Found Possible SyncKey: " << matches[2] << std::endl;
         sync_keys.push_back(matches[2]);
         // Move the search start to continue from the next match
         searchStart = matches.suffix().first;
@@ -82,7 +81,6 @@ inline std::vector<std::string> extractSyncKeys(std::string& input) {
 
     // Now replace the string ${...} with {...}
     input = std::regex_replace(input, pattern, R"({$2})");
-    std::cout << "XML without sync keys: " << input << std::endl; 
     return sync_keys;
 }
 

@@ -11,7 +11,6 @@ namespace BT_SERVER
     node_(node), 
     executor_(rclcpp::executors::MultiThreadedExecutor(rclcpp::ExecutorOptions(), 2))
   {
-    std::cout << "BehaviorTreeNode " << "\n" << std::flush;
     srv_cb_group_ = node_->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
     bb_upd_cb_group_ = node_->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
 
@@ -182,7 +181,6 @@ namespace BT_SERVER
       //   RCLCPP_ERROR(node_->get_logger(), "Sync Key: %s with type [%s] has not got a Value", ser_entry.first.c_str(), ser_entry.second.second->info.typeName().c_str() );
       // }
     }
-    //std::cout << "send BB UPDATES OK" << std::flush;
   }
 
   void BehaviorTreeNode::getBlackboardUpdates()
@@ -365,7 +363,6 @@ namespace BT_SERVER
 
   void BehaviorTreeNode::getParameters (rclcpp::Node::SharedPtr nh)
   {
-    std::cout << "getParameters " << "\n" << std::flush;
     // Declare parameters
     nh->declare_parameter(PARAM_NAME_TREES_FOLDER, "src/behaviortree_forest/behavior_trees");
     nh->declare_parameter(PARAM_NAME_ENABLE_COUT_LOG, true);
@@ -406,11 +403,9 @@ namespace BT_SERVER
     tree_wrapper_.tree_publisher_port_ = nh->get_parameter(PARAM_NAME_TREE_PUBLISHER_PORT).as_int();
     tree_wrapper_.params_.groot2_port = tree_wrapper_.tree_server_port_;
 
-    std::cout << "Fetching " << PARAM_NAME_TREE_ROS_PLUGINS_DIR << "\n" << std::flush;
     tree_wrapper_.ros_plugin_directories_ = node_->get_parameter(PARAM_NAME_TREE_ROS_PLUGINS_DIR).as_string_array();
     // tree_wrapper_.ros_plugin_directories_.push_back("behaviortree_ros2/bt_plugins");
 
-    std::cout << "Fetching " << PARAM_NAME_TREE_LOOP_RATE << "\n" << std::flush;
     loop_rate_ = nh->get_parameter(PARAM_NAME_TREE_LOOP_RATE).as_int();
  
     //Build BB_init Vector (OLD WAY)
@@ -426,7 +421,6 @@ namespace BT_SERVER
     }*/
 
     //Build BB_init Vector (New WAY TO TEST)
-    std::cout << "Fetching " << PARAM_NAME_TREE_BB_INIT << "\n" << std::flush;
     tree_wrapper_.tree_bb_init_ = node_->get_parameter(PARAM_NAME_TREE_BB_INIT).as_string_array();
 
     RCLCPP_INFO(nh->get_logger(),"Parameters Loaded succesfully");

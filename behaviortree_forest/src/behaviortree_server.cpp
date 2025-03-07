@@ -8,7 +8,9 @@
 namespace BT_SERVER
 {
   BehaviorTreeServer::BehaviorTreeServer(const rclcpp::Node::SharedPtr& node) : 
-    node_(node), eut_bt_factory_(BT::EutBehaviorTreeFactory(std::make_shared<BT::BehaviorTreeFactory>()))
+    node_(node), 
+    eut_bt_factory_(BT::EutBehaviorTreeFactory(std::make_shared<BT::BehaviorTreeFactory>())),
+    ros2_launch_manager_(node)
   {
     //Add nh to executor
     executor_.add_node(node_);
@@ -19,11 +21,10 @@ namespace BT_SERVER
     bt_server::Params bt_params;
     bt_params.ros_plugins_timeout = 5000;
     bt_params.plugins = ros_plugin_directories;
-    std::cout << "BehaviorTreeServer About to register plugins\n" << std::endl;
+
     RegisterPlugins(bt_params, eut_bt_factory_.originalFactory(), node_);
-    std::cout << "BehaviorTreeServer plugins registered okay\n" << std::endl;
     eut_bt_factory_.updateTypeInfoMap();
-    std::cout << "BehaviorTreeServer updated typeinfo map\n" << std::endl;
+    
     //Create Services:
     load_tree_srv_ = node_->create_service<LoadTreeSrv>("behavior_tree_forest/load_tree",std::bind(&BehaviorTreeServer::loadTreeCB,this,_1,_2));
     stop_tree_srv_ = node_->create_service<TreeRequestSrv>("behavior_tree_forest/stop_tree",std::bind(&BehaviorTreeServer::stopTreeCB,this,_1,_2));
@@ -373,7 +374,7 @@ namespace BT_SERVER
         if (!tree_info.killed && handleCallEmptySrv("/"+tree_info.tree_name+ "/kill_tree") || force_kill)
         {
           if(force_kill)
-            std::cout << "Force killing tree with uid " << std::to_string(tree_uid) << "\n" << std::flush;
+            RCLCPP_INFO(node_->get_logger(), "Force killing tree with uid %d", tree_uid);
 
           //Extract extra PIDs created when executing "ros2 run ..." with fork()
           pid_t bt_node_pid = ros2_launch_manager_.extract_bt_node_pid_from_python_pid(tree_info.pid);

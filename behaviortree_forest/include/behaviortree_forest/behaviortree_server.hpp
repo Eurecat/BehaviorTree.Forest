@@ -146,17 +146,18 @@ namespace BT_SERVER
       //Save Spawned Trees information
       std::map <unsigned int, TreeProcessInfo> uids_to_tree_info_;
       
-      //Manage spawn Process using ROS2 LAUNCH command
-      ROS2LaunchManager ros2_launch_manager_;
       
       //Manage Trees_UIDs
       unsigned int trees_UID_ = 0;
       
       rclcpp::Node::SharedPtr node_ ;
       rclcpp::executors::MultiThreadedExecutor executor_;
-
+      
       //BT_FACTORY
       BT::EutBehaviorTreeFactory eut_bt_factory_;
+
+      //Manage spawn Process using ROS2 LAUNCH command
+      ROS2LaunchManager ros2_launch_manager_;
   };
 }
 #endif

@@ -159,7 +159,6 @@ namespace BT_SERVER
 
   bool TreeWrapper::updateSyncMapEntrySyncStatus(const std::string& key, SyncStatus sync_status) 
   { 
-    std::cout << "Updating sync status of " << key << " to " << BT_SERVER::toStr(sync_status) << "\n" << std::endl;
     std::scoped_lock lock{syncMap_lock_};  // protect this block
     auto syncmapentry_it = syncMap_.find(key);
     if(syncmapentry_it != syncMap_.end())
@@ -172,7 +171,6 @@ namespace BT_SERVER
 
   bool TreeWrapper::updateSyncMapEntrySyncStatus(const std::string& key, SyncStatus expected_sync_status, SyncStatus new_sync_status) 
   { 
-    std::cout << "Updating sync status of " << key << " to " << BT_SERVER::toStr(new_sync_status) << "\n" << std::endl;
     std::scoped_lock lock{syncMap_lock_};  // protect this block
     auto syncmapentry_it = syncMap_.find(key);
     if(syncmapentry_it != syncMap_.end())
@@ -228,10 +226,9 @@ namespace BT_SERVER
       //Check that the tree is loaded
       if(!isTreeLoaded()) return;
 
-      std::cout << "[BTWrapper "<<tree_name_<<"]::syncBBUpdateCB " << 
-          "\tkey=" << _single_upd.key << 
-          "\ttype=" << _single_upd.type << 
-          "\tvalue=" << _single_upd.value << "\n" << std::flush;
+      RCLCPP_DEBUG(this->node_->get_logger(), "[BTWrapper %s]::syncBBUpdateCB\tkey=%s,\tvalue=%s,\ttype=%s", 
+        tree_name_.c_str(), _single_upd.key.c_str(), _single_upd.value.c_str(), _single_upd.type.c_str());
+
       //Check that the Entry received is Sync for this BT
       const auto& checked_sync_entry = checkForSyncKey(_single_upd.key);
       if (!checked_sync_entry.first || !checked_sync_entry.second.entry) return;
@@ -345,8 +342,9 @@ namespace BT_SERVER
             }
             catch(const std::exception& e)
             {
-                std::cerr << "[BTWrapper "<<tree_name_<<"]::syncBBUpdateCB fail to update value in BB for key [" << _single_upd.key << "]: " << e.what() << " \n" << std::flush;
-                return;
+              RCLCPP_WARN(this->node_->get_logger(), "[BTWrapper %s]::syncBBUpdateCB fail to update value in BB for \tkey=%s,\tvalue=%s,\ttype=%s, error %s", 
+                tree_name_.c_str(), _single_upd.key.c_str(), _single_upd.value.c_str(), _single_upd.type.c_str(), e.what());
+              return;
             }
 
             // std::cout << "[BTWrapper "<<tree_identifier_<<"]::syncBBUpdateCB updated value in BB for key [" << _single_upd.key << "] \n" << std::flush;
@@ -617,10 +615,6 @@ namespace BT_SERVER
       tree_ptr_ = std::make_shared<BT::Tree> (eut_bt_factory_.originalFactory().createTreeFromText(tree_xml,root_blackboard_));
 
       start_execution_time_ = node_->get_clock()->now();
-
-      std::cout << "TREE INSTANTIATED WITH THIS BB INIT (BEFORE SYNC EXCHANGE)\n" << std::flush;
-      root_blackboard_->debugMessage();
-      std::cout << "\n\n" << std::flush;
     }
     else
     {
@@ -652,7 +646,6 @@ namespace BT_SERVER
           // (!sync_entry_cp.entry->value.empty() || !BT::missingTypeInfo(sync_entry_cp.entry->info.type())) && // shall be not empty or shall have at least a type to be shared 
           sync_entry_cp.status == SyncStatus::TO_SYNC || sync_entry_cp.status == SyncStatus::SYNCING)
       {
-        std::cout << "getKeysValueToSync select " << element.first << " type = " << BT::demangle(element.second.entry->info.type()) <<  std::endl;
         ports_to_be_sync_cpy.emplace(element.first, std::move(sync_entry_cp));
       }
     }
