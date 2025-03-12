@@ -275,7 +275,7 @@ namespace BT_SERVER
             //         tree_name_.c_str(), _single_upd.key.c_str(), type_info->typeName().c_str(), _single_upd.type.c_str());
             //     return; // type inconsistencies, don't update
             // }
-             RCLCPP_INFO(node_->get_logger(),"[BTWrapper %s]::syncBBUpdateCB Trying to update sync port from SERVER for key [%s] with value [%s] : Accepted type %s, received %s", 
+             RCLCPP_DEBUG(node_->get_logger(),"[BTWrapper %s]::syncBBUpdateCB Trying to update sync port from SERVER for key [%s] with value [%s] : Accepted type %s, received %s", 
                   tree_name_.c_str(),
                   _single_upd.key.c_str(), _single_upd.value.c_str(),
                  entry_ptr->info.typeName().c_str(), _single_upd.type.c_str());
@@ -288,7 +288,7 @@ namespace BT_SERVER
               else
               {
                 // unacceptable inconsistency
-                RCLCPP_ERROR(node_->get_logger(),"[BTWrapper %s]::syncBBUpdateCB Failed to update sync port from SERVER for key [%s] with value [%s]; Type inconsistency: Accepted type %s, but received %s", 
+                RCLCPP_WARN(node_->get_logger(),"[BTWrapper %s]::syncBBUpdateCB Failed to update sync port from SERVER for key [%s] with value [%s]; Type inconsistency: Accepted type %s, but received %s", 
                   tree_name_.c_str(),
                   _single_upd.key.c_str(), _single_upd.value.c_str(),
                   entry_ptr->info.typeName().c_str(), _single_upd.type.c_str());
@@ -316,7 +316,7 @@ namespace BT_SERVER
                 expected_entry = BT::EutUtils::eutFromJson(json_value, entry_ptr->info.type());
                 if(expected_entry.has_value()) root_blackboard_->set(_single_upd.key, std::move(expected_entry.value().first));
                 else 
-                  RCLCPP_INFO(node_->get_logger(),"[BTWrapper %s]::syncBBUpdateCB Failed to update sync port from SERVER for key [%s] with value [%s] not expected %s", 
+                  RCLCPP_WARN(node_->get_logger(),"[BTWrapper %s]::syncBBUpdateCB Failed to update sync port from SERVER for key [%s] with value [%s] not expected %s", 
                   tree_name_.c_str(),
                   _single_upd.key.c_str(), _single_upd.value.c_str(),
                   expected_entry.error().c_str());
@@ -436,10 +436,10 @@ namespace BT_SERVER
 
   void TreeWrapper::loadAllPlugins()
   {
-      RCLCPP_INFO(node_->get_logger(),"LOADING PLUGINS");
+      RCLCPP_DEBUG(node_->get_logger(),"About to load bt plugins");
       loadPluginsFromROS(/*ros_plugin_directories_*/);
       // loadPluginsFromFolder();
-      RCLCPP_INFO(node_->get_logger(),"LOADED PLUGINS");
+      RCLCPP_DEBUG(node_->get_logger(),"Loaded bt plugins");
 
   }
 
@@ -492,7 +492,6 @@ namespace BT_SERVER
 
   void TreeWrapper::loadPluginsFromROS(/*std::vector<std::string> ros_plugins_folders*/)
   {
-      RCLCPP_INFO(node_->get_logger(),"LOADING PLUGINS FROM ROS");
 
       // if empty, load all the findable ones
       if(ros_plugin_directories_.empty())
@@ -508,15 +507,13 @@ namespace BT_SERVER
       
       for(const auto& plugin : bt_params.plugins)
       {
-        //RCLCPP_INFO(node_->get_logger(),"Added directory %s",plugin.c_str());
         loaded_plugins_.emplace(plugin);
       }
-      RCLCPP_INFO(node_->get_logger(),"LOADING PLUGINS FROM ROS OK");
+      RCLCPP_DEBUG(node_->get_logger(),"LOADING PLUGINS FROM ROS OK");
   }
   
   void TreeWrapper::initBB()
   {
-    RCLCPP_INFO(node_->get_logger(),"CREATING BB with %ld init files", tree_bb_init_.size());
     int init_bb_counter = 0;
     if (tree_bb_init_.size() > 0)
     {
@@ -526,7 +523,6 @@ namespace BT_SERVER
           initBBFromFile(bb_init_abs_filepath);init_bb_counter++;
       }
     }
-    RCLCPP_INFO(node_->get_logger(),"CREATING BB with %d init files OK", init_bb_counter);
   }
   
   void TreeWrapper::initBBFromFile(const std::string& abs_file_path)
@@ -560,7 +556,7 @@ namespace BT_SERVER
             else
                 bb_val = bbentry_value_inferred_keyvalues.value();*/
 
-            RCLCPP_INFO(node_->get_logger(),"Init. BB key [\"%s\"] with value \"%s\"", bb_key.c_str(), bb_val.c_str());
+            RCLCPP_DEBUG(node_->get_logger(),"Init. BB key [\"%s\"] with value \"%s\"", bb_key.c_str(), bb_val.c_str());
             // use the string here and blackboard_ptr->set(...)
             root_blackboard_->set(bb_key, bb_val);
             
@@ -628,7 +624,6 @@ namespace BT_SERVER
     }
 
     //Create debug_tree_ptr
-    RCLCPP_INFO(node_->get_logger(),"Init debug_tree_ptr");
     debug_tree_ptr = std::make_shared<BT::DebuggableTree>(tree_ptr_,tree_debug);
 
   }
@@ -636,7 +631,6 @@ namespace BT_SERVER
   SyncMap TreeWrapper::getKeysValueToSync ()
   {
     std::scoped_lock lock{syncMap_lock_};  // protect this block  
-    RCLCPP_INFO(node_->get_logger()," Getting Keys Value to Sync"); 
     SyncMap ports_to_be_sync_cpy;
     for(auto& element : syncMap_)
     {
@@ -649,7 +643,6 @@ namespace BT_SERVER
         ports_to_be_sync_cpy.emplace(element.first, std::move(sync_entry_cp));
       }
     }
-    //RCLCPP_INFO(node_->get_logger()," Getting Keys Value to Sync OK"); 
     return ports_to_be_sync_cpy;
   }
 

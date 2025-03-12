@@ -55,13 +55,12 @@ namespace BT_SERVER
   
   BehaviorTreeServer::~BehaviorTreeServer() 
   {
-    RCLCPP_INFO(node_->get_logger(), "Calling destructor");
     killAllTrees(true);//force kill them all
   }
 
   void BehaviorTreeServer::syncBBCB(const BBEntry::SharedPtr msg) const
   {
-    RCLCPP_INFO(node_->get_logger(), "Received a Sync Update from %s BT. Key: '%s' Type: '%s' Value: '%s'", msg->bt_id.c_str(), msg->key.c_str(),msg->type.c_str(), msg->value.c_str());
+    RCLCPP_DEBUG(node_->get_logger(), "Received a Sync Update from %s BT. Key: '%s' Type: '%s' Value: '%s'", msg->bt_id.c_str(), msg->key.c_str(),msg->type.c_str(), msg->value.c_str());
 
     if(sync_blackboard_ptr_)
     {
@@ -87,7 +86,7 @@ namespace BT_SERVER
           else
           {
             // unacceptable inconsistency
-            RCLCPP_ERROR(node_->get_logger(),"Failed to update sync port in SERVER BB for key [%s] with value [%s] : Type inconsistency type %s, but received %s", 
+            RCLCPP_WARN(node_->get_logger(),"Failed to update sync port in SERVER BB for key [%s] with value [%s] : Type inconsistency type %s, but received %s", 
               msg->key.c_str(), msg->value.c_str(),
               msg->type.c_str(), entry_ptr->info.typeName().c_str());
             return;
@@ -107,15 +106,13 @@ namespace BT_SERVER
         else
         {
           const nlohmann::json json_value = nlohmann::json::parse(msg->value);
-          RCLCPP_INFO(node_->get_logger(),"Sync port in SERVER BB for key [%s] with value parsed to json [%s] : type of parsed json [%s]", msg->key.c_str(), json_value.dump().c_str(), json_value.type_name());
+          RCLCPP_DEBUG(node_->get_logger(),"Sync port in SERVER BB for key [%s] with value parsed to json [%s] : type of parsed json [%s]", msg->key.c_str(), json_value.dump().c_str(), json_value.type_name());
           
           const BT::JsonExporter::ExpectedEntry expected_entry = BT::EutUtils::eutFromJson(json_value, entry_ptr->info.type());
           if(expected_entry.has_value())
           {
-            RCLCPP_INFO(node_->get_logger(),"Sync port in SERVER BB for key [%s] with entry parsed from json [%s] : type [%s][%s]", msg->key.c_str(), json_value.dump().c_str(), 
-              BT::demangle(expected_entry.value().first.type()).c_str(), expected_entry.value().second.typeName().c_str());
             sync_blackboard_ptr_->set(msg->key, std::move(expected_entry.value().first));
-            RCLCPP_INFO(node_->get_logger(),"Synced port in SERVER BB for key [%s] with entry parsed from json [%s] : type [%s][%s]", msg->key.c_str(), json_value.dump().c_str(), 
+            RCLCPP_DEBUG(node_->get_logger(),"Synced port in SERVER BB for key [%s] with entry parsed from json [%s] : type [%s][%s]", msg->key.c_str(), json_value.dump().c_str(), 
               BT::demangle(expected_entry.value().first.type()).c_str(), expected_entry.value().second.typeName().c_str());
           }
         }
@@ -186,7 +183,7 @@ namespace BT_SERVER
     upd_msg.bt_id = msg->bt_id;
     upd_msg.sender_sequence_id = msg->sender_sequence_id;
     sync_bb_pub_->publish(upd_msg);
-    RCLCPP_INFO(node_->get_logger(), "Sync Port %s Updated on BT_Server BB and Republished succesfully",msg->key.c_str());
+    RCLCPP_DEBUG(node_->get_logger(), "Sync Port %s Updated on BT_Server BB and Republished succesfully",msg->key.c_str());
   }
 
   bool BehaviorTreeServer::loadTreeCB(const std::shared_ptr<LoadTreeSrv::Request> req, std::shared_ptr<LoadTreeSrv::Response> res)
@@ -332,26 +329,21 @@ namespace BT_SERVER
 
   bool BehaviorTreeServer::handleCallEmptySrv(const std::string& service_name)
   {
-    RCLCPP_INFO(node_->get_logger(), "handleCallEmptySrv START");
     const auto response = handleSyncSrvCall<EmptySrv>(service_name);
-    RCLCPP_INFO(node_->get_logger(), "handleCallEmptySrv END");
 
     return response.second == rclcpp::FutureReturnCode::SUCCESS; // Indicate that the service was received
   }
 
   bool BehaviorTreeServer::handleCallTriggerSrv(const std::string& service_name)
   {
-    RCLCPP_INFO(node_->get_logger(), "handleCallTriggerSrv START");
     const auto response = handleSyncSrvCall<TriggerSrv>(service_name);
     bool success = response.second == rclcpp::FutureReturnCode::SUCCESS && response.first->success; // Indicate that the service was received and processed successfully
-    RCLCPP_INFO(node_->get_logger(), "handleCallTriggerSrv END");
-
     return success; 
   }
 
   bool BehaviorTreeServer::stopTreeCB(const std::shared_ptr<TreeRequestSrv::Request> req, std::shared_ptr<TreeRequestSrv::Response> res)
   {
-    RCLCPP_INFO(node_->get_logger(), "Stopping tree with UID: '%u' ", req->tree_uid);
+    RCLCPP_DEBUG(node_->get_logger(), "Stopping tree with UID: '%u' ", req->tree_uid);
     if(uids_to_tree_info_.find(req->tree_uid) != uids_to_tree_info_.end())
     {
         TreeProcessInfo tree_info = uids_to_tree_info_.at(req->tree_uid);
@@ -424,7 +416,7 @@ namespace BT_SERVER
 
   bool BehaviorTreeServer::restartTreeCB(const std::shared_ptr<TreeRequestSrv::Request> req, std::shared_ptr<TreeRequestSrv::Response> res)
   {
-    RCLCPP_INFO(node_->get_logger(), "Restarting Tree with UID: '%u' ", req->tree_uid);
+    RCLCPP_DEBUG(node_->get_logger(), "Restarting Tree with UID: '%u' ", req->tree_uid);
     if(uids_to_tree_info_.find(req->tree_uid) != uids_to_tree_info_.end())
     {
         TreeProcessInfo tree_info = uids_to_tree_info_.at(req->tree_uid);
@@ -439,7 +431,7 @@ namespace BT_SERVER
 
   bool BehaviorTreeServer::pauseTreeCB(const std::shared_ptr<TreeRequestSrv::Request> req, std::shared_ptr<TreeRequestSrv::Response> res)
   {
-    RCLCPP_INFO(node_->get_logger(), "Pausing tree with UID: '%u' ", req->tree_uid);
+    RCLCPP_DEBUG(node_->get_logger(), "Pausing tree with UID: '%u' ", req->tree_uid);
     if(uids_to_tree_info_.find(req->tree_uid) != uids_to_tree_info_.end())
     {
         TreeProcessInfo tree_info = uids_to_tree_info_.at(req->tree_uid);
@@ -463,7 +455,7 @@ namespace BT_SERVER
 
   bool BehaviorTreeServer::resumeTreeCB(const std::shared_ptr<TreeRequestSrv::Request> req, std::shared_ptr<TreeRequestSrv::Response> res)
   {
-    RCLCPP_INFO(node_->get_logger(), "Resuming tree with UID: '%u' ", req->tree_uid);
+    RCLCPP_DEBUG(node_->get_logger(), "Resuming tree with UID: '%u' ", req->tree_uid);
     if(uids_to_tree_info_.find(req->tree_uid) != uids_to_tree_info_.end())
     {
         TreeProcessInfo tree_info = uids_to_tree_info_.at(req->tree_uid);
@@ -486,11 +478,8 @@ namespace BT_SERVER
 
   bool BehaviorTreeServer::getSyncBBValuesCB (const std::shared_ptr<GetBBValuesSrv::Request> req, std::shared_ptr<GetBBValuesSrv::Response> res)
   {
-    RCLCPP_INFO(node_->get_logger(), "getSyncBBValuesCB");
-
     for (auto key : req->keys)
     {
-      RCLCPP_INFO(node_->get_logger(), "Sync Key: '%s' ", key.c_str());
 
       auto bb_entry_str = BT::EutUtils::getEntryAsString(key,sync_blackboard_ptr_);
       if(bb_entry_str.has_value())
@@ -504,7 +493,7 @@ namespace BT_SERVER
       }
       else
       {
-        RCLCPP_ERROR(node_->get_logger(), "Error fetching PortValue: %s  for port %s ", bb_entry_str.error().c_str(), key.c_str());
+        RCLCPP_WARN(node_->get_logger(), "Error fetching PortValue: %s  for port %s ", bb_entry_str.error().c_str(), key.c_str());
       }
     }
     return true;
@@ -512,7 +501,6 @@ namespace BT_SERVER
   
   bool BehaviorTreeServer::getTreeStatusCB(const std::shared_ptr<GetTreeStatusSrv::Request> req, std::shared_ptr<GetTreeStatusSrv::Response> res)
   {
-    RCLCPP_INFO(node_->get_logger(), "Getting Tree status with UID: '%u' ", req->tree_uid);
     // Get Saved Status updated by ROS topic
     if (uids_to_tree_info_.find(req->tree_uid) != uids_to_tree_info_.end())
     {
@@ -528,7 +516,6 @@ namespace BT_SERVER
   
   bool BehaviorTreeServer::getAllTreeStatusCB(const std::shared_ptr<GetAllTreeStatusSrv::Request> req, std::shared_ptr<GetAllTreeStatusSrv::Response> res)
   {
-    RCLCPP_INFO(node_->get_logger(), "Getting All trees status");
     for (auto tree_info : uids_to_tree_info_)
     {
       res->status.push_back(tree_info.second.tree_status);
@@ -539,14 +526,13 @@ namespace BT_SERVER
   void BehaviorTreeServer::treeStatusTopicCB(const TreeStatus::SharedPtr msg)   
   {
       uids_to_tree_info_.at(msg->uid).tree_status = *msg;
-      RCLCPP_INFO(node_->get_logger(),"New Status topic RX: Tree_name:%s New status:%u", uids_to_tree_info_.at(msg->uid).tree_name.c_str() , uids_to_tree_info_.at(msg->uid).tree_status.status);
   }
 
   void BehaviorTreeServer::initBB(const std::string& abs_file_path, BT::Blackboard::Ptr blackboard_ptr)
   {
     try 
     {
-        RCLCPP_INFO(node_->get_logger(), "Initializing BB from YAML file %s", abs_file_path.c_str());
+        RCLCPP_DEBUG(node_->get_logger(), "Initializing BB from YAML file %s", abs_file_path.c_str());
         YAML::Node config = YAML::LoadFile(abs_file_path);
         for(YAML::const_iterator it=config.begin();it!=config.end();++it)
         {
@@ -557,7 +543,7 @@ namespace BT_SERVER
             if(!bbentry_value_inferred_keyvalues)
             {
                 // but will complain if it has a reference to a wrong key
-                RCLCPP_ERROR(node_->get_logger(), "Init. of BB key %s for value %s, value inference did not succeed: %s", 
+                RCLCPP_WARN(node_->get_logger(), "Init. of BB key %s for value %s, value inference did not succeed: %s", 
                     bb_key.c_str(), 
                     bb_val.c_str(),
                     bbentry_value_inferred_keyvalues.error().c_str());
@@ -570,18 +556,18 @@ namespace BT_SERVER
               // use the string here and blackboard_ptr->set(...)
               blackboard_ptr->set(bb_key, bb_val);
               const auto entry_n = blackboard_ptr->getEntry(bb_key);
-              RCLCPP_INFO(node_->get_logger(), "Init. BB key [\"%s\"] with value \"%s\" et %s t %s, ct %s", 
+              RCLCPP_DEBUG(node_->get_logger(), "Init. BB key [\"%s\"] with value \"%s\" et %s t %s, ct %s", 
               bb_key.c_str(), bb_val.c_str(),
               BT::demangle(entry_n->info.type()).c_str(),
               BT::demangle(entry_n->value.type()).c_str(), BT::demangle(entry_n->value.castedType()).c_str());
         
             }
         }  
-        RCLCPP_INFO(node_->get_logger(), "Initialized BB with %ld entries from YAML file %s", blackboard_ptr->getKeys().size(), abs_file_path.c_str());
+        RCLCPP_DEBUG(node_->get_logger(), "Initialized BB with %ld entries from YAML file %s", blackboard_ptr->getKeys().size(), abs_file_path.c_str());
     }
     catch(const YAML::Exception& ex) 
     { 
-        RCLCPP_ERROR(node_->get_logger(), "Initializing. BB key from file '%s' did not succeed: %s", abs_file_path.c_str(), ex.what());
+        RCLCPP_WARN(node_->get_logger(), "Initializing. BB key from file '%s' did not succeed: %s", abs_file_path.c_str(), ex.what());
     }
   }
   
