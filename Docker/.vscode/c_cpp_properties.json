@@ -9,7 +9,7 @@
             "defines": [],
             "cppStandard": "gnu++17",
             "intelliSenseMode": "linux-clang-x64",
-            "compileCommands": "/eut_bt_forest_ws/build/compile_commands.json"
+            // "compileCommands": "/eut_bt_forest_ws/build/compile_commands.json"
         }
     ],
     "version": 4
