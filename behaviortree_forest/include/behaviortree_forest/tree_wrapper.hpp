@@ -21,8 +21,7 @@
 #include "behaviortree_forest_interfaces/srv/get_tree_status.hpp"
 #include "behaviortree_forest_interfaces/msg/transition.hpp"
 #include "behaviortree_forest_interfaces/msg/bb_entry.hpp"
-
-#include "behaviortree_forest/sync_blackboard.hpp"
+#include "behaviortree_forest/sync_manager.hpp"
 #include "behaviortree_forest/utils.hpp"
 
 using TreeStatus = behaviortree_forest_interfaces::msg::TreeExecutionStatus;
@@ -74,13 +73,10 @@ namespace BT_SERVER
     void syncBBUpdateCB(const BBEntry& _single_upd);
     void syncBBUpdateCB(const std::vector<BBEntry>& _bulk_upd);
     SyncMap getKeysValueToSync ();
-    
+
     bool updateSyncMapEntrySyncStatus(const std::string& key, SyncStatus sync_status);
     bool updateSyncMapEntrySyncStatus(const std::string& key, SyncStatus expected_sync_status, SyncStatus new_sync_status); 
-    bool addToSyncMap(const std::string& bb_key, SyncStatus sync_status);
-    std::pair<bool, SyncEntry> checkForSyncKey(const std::string& key);
     bool checkSyncStatus(const std::string& key, SyncStatus sync_status);
-
 
     void checkForToSyncEntries();
     std::vector<std::string> getSyncKeysList();
@@ -141,8 +137,7 @@ namespace BT_SERVER
     std::mutex status_lock_;
 
     //Sync
-    std::mutex syncMap_lock_;
-    SyncMap syncMap_;
+    std::shared_ptr<SyncManager> sync_manager_;
   };
 }
 #endif

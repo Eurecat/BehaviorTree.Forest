@@ -44,10 +44,10 @@ namespace BT_SERVER
     if(sync_bb_init_file.length() > 0) { initBB(sync_bb_init_file, sync_blackboard_ptr_); }
 
     //Updates subscriber server side
-    sync_bb_sub_ = node_->create_subscription<BBEntry>("behavior_tree_forest/local_update", 10, std::bind(&BehaviorTreeServer::syncBBCB, this, _1)) ;
+    sync_bb_sub_ = node_->create_subscription<BBEntries>("behavior_tree_forest/local_update", 10, std::bind(&BehaviorTreeServer::syncBBCB, this, _1)) ;
     
     //Updates republisher for all trees (put latch to true atm, because seems a good option that you receive last update from the server)
-    sync_bb_pub_ = node_->create_publisher<BBEntry>("behavior_tree_forest/broadcast_update", 10);
+    sync_bb_pub_ = node_->create_publisher<BBEntries>("behavior_tree_forest/broadcast_update", 10);
 
 
     RCLCPP_INFO(node_->get_logger(), "BehaviorTreeServer with name %s up and running", this->node_->get_name());
@@ -57,29 +57,36 @@ namespace BT_SERVER
   {
     killAllTrees(true);//force kill them all
   }
-
-  void BehaviorTreeServer::syncBBCB(const BBEntry::SharedPtr msg) const
+  void BehaviorTreeServer::syncBBCB(const BBEntries::SharedPtr msg) const
   {
-    RCLCPP_DEBUG(node_->get_logger(), "Received a Sync Update from %s BT. Key: '%s' Type: '%s' Value: '%s'", msg->bt_id.c_str(), msg->key.c_str(),msg->type.c_str(), msg->value.c_str());
+    for(const auto& entry : msg->entries)
+    {
+      syncBB(entry);
+    }
+    republishUpdatedSyncEntries(msg);
+  }
+  void BehaviorTreeServer::syncBB(const BBEntry& msg) const
+  {
+    RCLCPP_DEBUG(node_->get_logger(), "Received a Sync Update from %s BT. Key: '%s' Type: '%s' Value: '%s'", msg.bt_id.c_str(), msg.key.c_str(),msg.type.c_str(), msg.value.c_str());
 
     if(sync_blackboard_ptr_)
     {
-      auto entry_ptr = sync_blackboard_ptr_->getEntry(msg->key);
+      auto entry_ptr = sync_blackboard_ptr_->getEntry(msg.key);
 
-      if(!entry_ptr || !entry_ptr->info.isStronglyTyped() && BT::isStronglyTyped(msg->type)) // entry does not exist or existed with no type and now I know type
+      if(!entry_ptr || !entry_ptr->info.isStronglyTyped() && BT::isStronglyTyped(msg.type)) // entry does not exist or existed with no type and now I know type
       {
-        sync_blackboard_ptr_->unset(msg->key);
-        BT::TypeInfo type_info = eut_bt_factory_.getTypeInfo(msg->type).value_or(BT::TypeInfo()); // fallback to AnyTypeAllowed
-        sync_blackboard_ptr_->createEntry(msg->key, type_info);
-        entry_ptr = sync_blackboard_ptr_->getEntry(msg->key); // update entry ptr
+        sync_blackboard_ptr_->unset(msg.key);
+        BT::TypeInfo type_info = eut_bt_factory_.getTypeInfo(msg.type).value_or(BT::TypeInfo()); // fallback to AnyTypeAllowed
+        sync_blackboard_ptr_->createEntry(msg.key, type_info);
+        entry_ptr = sync_blackboard_ptr_->getEntry(msg.key); // update entry ptr
       }
 
       // type safety checks
       if(entry_ptr)
       { 
-        if(BT::isStronglyTyped(msg->type) && entry_ptr->info.isStronglyTyped() && msg->type != entry_ptr->info.typeName())
+        if(BT::isStronglyTyped(msg.type) && entry_ptr->info.isStronglyTyped() && msg.type != entry_ptr->info.typeName())
         {
-          if(entry_ptr->value.isNumber() && BT::isNumberType(msg->type))
+          if(entry_ptr->value.isNumber() && BT::isNumberType(msg.type))
           {
             // will be treated later within the library in the blackboard->set(...) call and might be still acceptable
           }
@@ -87,8 +94,8 @@ namespace BT_SERVER
           {
             // unacceptable inconsistency
             RCLCPP_WARN(node_->get_logger(),"Failed to update sync port in SERVER BB for key [%s] with value [%s] : Type inconsistency type %s, but received %s", 
-              msg->key.c_str(), msg->value.c_str(),
-              msg->type.c_str(), entry_ptr->info.typeName().c_str());
+              msg.key.c_str(), msg.value.c_str(),
+              msg.type.c_str(), entry_ptr->info.typeName().c_str());
             return;
           }
         }
@@ -98,21 +105,21 @@ namespace BT_SERVER
       {
 
         BT::JsonExporter::ExpectedEntry expected_entry = {};
-        if(!entry_ptr || !BT::isStronglyTyped(msg->type))
+        if(!entry_ptr || !BT::isStronglyTyped(msg.type))
         {
-          if(!msg->value.empty()) sync_blackboard_ptr_->set(msg->key, msg->value); // no type and stringified value both side
+          if(!msg.value.empty()) sync_blackboard_ptr_->set(msg.key, msg.value); // no type and stringified value both side
           else return; // no type, no value
         }
         else
         {
-          const nlohmann::json json_value = nlohmann::json::parse(msg->value);
-          RCLCPP_DEBUG(node_->get_logger(),"Sync port in SERVER BB for key [%s] with value parsed to json [%s] : type of parsed json [%s]", msg->key.c_str(), json_value.dump().c_str(), json_value.type_name());
+          const nlohmann::json json_value = nlohmann::json::parse(msg.value);
+          RCLCPP_DEBUG(node_->get_logger(),"Sync port in SERVER BB for key [%s] with value parsed to json [%s] : type of parsed json [%s]", msg.key.c_str(), json_value.dump().c_str(), json_value.type_name());
           
           const BT::JsonExporter::ExpectedEntry expected_entry = BT::EutUtils::eutFromJson(json_value, entry_ptr->info.type());
           if(expected_entry.has_value())
           {
-            sync_blackboard_ptr_->set(msg->key, std::move(expected_entry.value().first));
-            RCLCPP_DEBUG(node_->get_logger(),"Synced port in SERVER BB for key [%s] with entry parsed from json [%s] : type [%s][%s]", msg->key.c_str(), json_value.dump().c_str(), 
+            sync_blackboard_ptr_->set(msg.key, std::move(expected_entry.value().first));
+            RCLCPP_DEBUG(node_->get_logger(),"Synced port in SERVER BB for key [%s] with entry parsed from json [%s] : type [%s][%s]", msg.key.c_str(), json_value.dump().c_str(), 
               BT::demangle(expected_entry.value().first.type()).c_str(), expected_entry.value().second.typeName().c_str());
           }
         }
@@ -120,7 +127,7 @@ namespace BT_SERVER
       }
       catch(const std::exception& e)
       {
-        RCLCPP_ERROR(node_->get_logger(),"Failed to update sync port in SERVER BB for key [%s] with value [%s] : %s", msg->key.c_str(), msg->value.c_str(), e.what());
+        RCLCPP_ERROR(node_->get_logger(),"Failed to update sync port in SERVER BB for key [%s] with value [%s] : %s", msg.key.c_str(), msg.value.c_str(), e.what());
         return;
       }
     }
@@ -176,14 +183,30 @@ namespace BT_SERVER
     // }
 
     //Republish message to all BT_NODES
-    BBEntry upd_msg;
-    upd_msg.key = msg->key;
-    upd_msg.type = sync_blackboard_ptr_->getEntry(msg->key)->info.typeName() ;
-    upd_msg.value = msg->value;
-    upd_msg.bt_id = msg->bt_id;
-    upd_msg.sender_sequence_id = msg->sender_sequence_id;
-    sync_bb_pub_->publish(upd_msg);
-    RCLCPP_DEBUG(node_->get_logger(), "Sync Port %s Updated on BT_Server BB and Republished succesfully",msg->key.c_str());
+    /*BBEntry upd_msg;
+    upd_msg.key = msg.key;
+    upd_msg.type = sync_blackboard_ptr_->getEntry(msg.key)->info.typeName() ;
+    upd_msg.value = msg.value;
+    upd_msg.bt_id = msg.bt_id;
+    upd_msg.sender_sequence_id = msg.sender_sequence_id;
+    sync_bb_pub_->publish(upd_msg);*/
+    RCLCPP_DEBUG(node_->get_logger(), "Sync Port %s Updated on BT_Server BB succesfully",msg.key.c_str());
+  }
+
+  void BehaviorTreeServer::republishUpdatedSyncEntries(const BBEntries::SharedPtr msg) const
+  {
+    BBEntries entries;
+    for (const auto& entry : msg->entries)
+    {
+      BBEntry upd_msg;
+      upd_msg.key = entry.key;
+      upd_msg.type = sync_blackboard_ptr_->getEntry(entry.key)->info.typeName() ;
+      upd_msg.value = entry.value;
+      upd_msg.bt_id = entry.bt_id;
+      upd_msg.sender_sequence_id = entry.sender_sequence_id;
+      entries.entries.push_back(upd_msg);
+    }
+    sync_bb_pub_->publish(entries);
   }
 
   bool BehaviorTreeServer::loadTreeCB(const std::shared_ptr<LoadTreeSrv::Request> req, std::shared_ptr<LoadTreeSrv::Response> res)

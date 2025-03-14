@@ -28,10 +28,10 @@ namespace BT_SERVER
     rclcpp::SubscriptionOptions sync_bb_sub_options;
     sync_bb_sub_options.callback_group = bb_upd_cb_group_;  // Attach the subscription to the callback group
     // Updates subscriber server side
-    sync_bb_sub_ = node_->create_subscription<BBEntry>("behavior_tree_forest/broadcast_update", 10, std::bind(&BehaviorTreeNode::syncBBUpdateCB, this, _1), sync_bb_sub_options);
+    sync_bb_sub_ = node_->create_subscription<BBEntries>("behavior_tree_forest/broadcast_update", 10, std::bind(&BehaviorTreeNode::syncBBUpdateCB, this, _1), sync_bb_sub_options);
     
     // Updates republisher for all trees (put latch to true atm, because seems a good option that you receive last update from the server)
-    sync_bb_pub_ = node_->create_publisher<BBEntry>("/behavior_tree_forest/local_update", 10);
+    sync_bb_pub_ = node_->create_publisher<BBEntries>("/behavior_tree_forest/local_update", 10);
 
     //Init Publishers
     tree_wrapper_.initStatusPublisher();
@@ -126,16 +126,23 @@ namespace BT_SERVER
         } 
     }
   }
-
-  void BehaviorTreeNode::syncBBUpdateCB(const BBEntry::SharedPtr _topic_msg)
+  void BehaviorTreeNode::syncBBUpdateCB(const BBEntries::SharedPtr _topic_msg)
+  {
+    for(const auto& entry : _topic_msg->entries)
+    {
+      syncBBUpdate(entry);
+    }
+  }
+  void BehaviorTreeNode::syncBBUpdate(const BBEntry& _topic_msg)
   {   
-    RCLCPP_DEBUG(node_->get_logger(), "syncBBUpdateCB on key: %s", _topic_msg->key.c_str());
+    RCLCPP_DEBUG(node_->get_logger(), "syncBBUpdateCB on key: %s", _topic_msg.key.c_str());
     // Forward received update to tree
-    if(tree_wrapper_.isTreeLoaded()) tree_wrapper_.syncBBUpdateCB(*_topic_msg);
+    if(tree_wrapper_.isTreeLoaded()) tree_wrapper_.syncBBUpdateCB(_topic_msg);
   }
 
   void BehaviorTreeNode::sendBlackboardUpdates(const SyncMap& entries_map)
   {
+    BBEntries bb_entries_msg;
     for(const auto& ser_entry : entries_map)
     {
       RCLCPP_DEBUG(node_->get_logger(), "sendBlackboardUpdate on key: %s", ser_entry.first.c_str());
@@ -169,7 +176,7 @@ namespace BT_SERVER
         
         if(tree_wrapper_.updateSyncMapEntrySyncStatus(bb_entry_msg.key, SyncStatus::TO_SYNC, SyncStatus::SYNCING) || tree_wrapper_.checkSyncStatus(bb_entry_msg.key,SyncStatus::SYNCING))
         {
-          sync_bb_pub_->publish(bb_entry_msg);
+          bb_entries_msg.entries.push_back(bb_entry_msg);
         }
       }
       // else
@@ -177,6 +184,7 @@ namespace BT_SERVER
       //   RCLCPP_ERROR(node_->get_logger(), "Sync Key: %s with type [%s] has not got a Value", ser_entry.first.c_str(), ser_entry.second.second->info.typeName().c_str() );
       // }
     }
+    sync_bb_pub_->publish(bb_entries_msg);
   }
 
   void BehaviorTreeNode::getBlackboardUpdates()

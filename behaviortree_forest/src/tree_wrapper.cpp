@@ -6,8 +6,11 @@
 namespace BT_SERVER
 {
   TreeWrapper::TreeWrapper(const rclcpp::Node::SharedPtr& node)
-    : node_(node), eut_bt_factory_(BT::EutBehaviorTreeFactory(std::make_shared<BT::BehaviorTreeFactory>())), tree_ptr_(nullptr)
+    : node_(node),
+    eut_bt_factory_(BT::EutBehaviorTreeFactory(std::make_shared<BT::BehaviorTreeFactory>())), 
+    tree_ptr_(nullptr)
   {
+    sync_manager_ = std::make_shared<SyncManager>(node);
     root_blackboard_ = BT::Blackboard::create();
   }
 
@@ -157,63 +160,6 @@ namespace BT_SERVER
       bt_execution_status_publisher_ = node_->create_publisher<TreeStatus>("/"+tree_name_+"/execution_status", 100);
   }
 
-  bool TreeWrapper::updateSyncMapEntrySyncStatus(const std::string& key, SyncStatus sync_status) 
-  { 
-    std::scoped_lock lock{syncMap_lock_};  // protect this block
-    auto syncmapentry_it = syncMap_.find(key);
-    if(syncmapentry_it != syncMap_.end())
-    {
-      return syncmapentry_it->second.updateSyncStatus(sync_status);
-      return true;
-    }
-    return false;
-  }
-
-  bool TreeWrapper::updateSyncMapEntrySyncStatus(const std::string& key, SyncStatus expected_sync_status, SyncStatus new_sync_status) 
-  { 
-    std::scoped_lock lock{syncMap_lock_};  // protect this block
-    auto syncmapentry_it = syncMap_.find(key);
-    if(syncmapentry_it != syncMap_.end())
-    {
-      return syncmapentry_it->second.updateSyncStatus(expected_sync_status, new_sync_status);
-      return true;
-    }
-    return false;
-  }
-
-  bool TreeWrapper::addToSyncMap(const std::string& bb_key, SyncStatus sync_status) 
-  { 
-    if(const auto entry_ptr = root_blackboard_->getEntry(bb_key))
-    {
-      std::scoped_lock lock{syncMap_lock_};  // protect this block
-      if(syncMap_.find(bb_key) == syncMap_.end())
-      {
-        syncMap_.emplace(bb_key, std::move(SyncEntry(entry_ptr, sync_status)));
-        return true;
-      }
-    }
-    return false;
-  }
-  std::pair<bool, SyncEntry> TreeWrapper::checkForSyncKey(const std::string& key)
-  {
-    std::scoped_lock lock{syncMap_lock_};  // protect this block
-    const auto it = syncMap_.find(key);
-    if(it != syncMap_.end())
-      return std::make_pair(true, it->second.getSafeCopy());
-    else
-      return std::make_pair(false, SyncEntry());
-  }
-
-  bool TreeWrapper::checkSyncStatus(const std::string& key, SyncStatus sync_status)
-  {
-    std::scoped_lock lock{syncMap_lock_};  // protect this block
-    const auto sync_item_it = syncMap_.find(key);
-    if(sync_item_it != syncMap_.end())
-    {
-      return sync_item_it->second.syncStatus() == sync_status;
-    }
-    return false;
-  }
 
   void TreeWrapper::syncBBUpdateCB(const std::vector<BBEntry>& _bulk_upd)
   {
@@ -230,7 +176,7 @@ namespace BT_SERVER
         tree_name_.c_str(), _single_upd.key.c_str(), _single_upd.value.c_str(), _single_upd.type.c_str());
 
       //Check that the Entry received is Sync for this BT
-      const auto& checked_sync_entry = checkForSyncKey(_single_upd.key);
+      const auto& checked_sync_entry = sync_manager_->checkForSyncKey(_single_upd.key);
       if (!checked_sync_entry.first || !checked_sync_entry.second.entry) return;
 
       //Updates are republished from bt_server, check that the update comes from another BT before processing the value and update the BB
@@ -563,7 +509,7 @@ namespace BT_SERVER
             //ADD VALUE TO SYNC MAP
             if (sync_entry)
             {
-              addToSyncMap(bb_key, SyncStatus::TO_SYNC);
+              sync_manager_->addToSyncMap(bb_key, SyncStatus::TO_SYNC, root_blackboard_);
             }
         }
         RCLCPP_INFO(node_->get_logger(),"Initialized BB with %ld entries from YAML file %s", root_blackboard_->getKeys().size(), abs_file_path.c_str());
@@ -572,31 +518,6 @@ namespace BT_SERVER
     { 
         RCLCPP_ERROR(node_->get_logger(),"Initializing. BB key from file '%s' did not succeed: %s", abs_file_path.c_str(), ex.what());
     }
-  }
-  
-  void TreeWrapper::checkForToSyncEntries()
-  {
-    std::vector<std::string> erased_entries;
-    std::scoped_lock lock{syncMap_lock_};  // protect this block
-    //SEARCH ON THE BLACKBOARD FOR NEW SYNC PORTS UPDATED
-    for (auto& sync_entry_item : syncMap_)
-    {
-      const SyncEntry& sync_entry = sync_entry_item.second.getSafeCopy();
-      if(root_blackboard_->entryInfo(sync_entry_item.first) == nullptr)
-      {
-        erased_entries.push_back(sync_entry_item.first);// erased entry
-        continue;
-      }
-
-      if (sync_entry.entry && sync_entry.entry->stamp > sync_entry.last_synced)
-      {
-        sync_entry_item.second.updateSyncStatus(SyncStatus::TO_SYNC);
-      }
-    }
-
-    // removed erased entries from SyncMap
-    for(const auto& erased_entry : erased_entries)
-      syncMap_.erase(syncMap_.find(erased_entry));
   }
 
   void TreeWrapper::createTree(const std::string& full_path, bool tree_debug)
@@ -620,7 +541,7 @@ namespace BT_SERVER
     //Add the syncKeys to the syncMap
     for (auto key: sync_keys)
     {
-      addToSyncMap(key, SyncStatus::TO_SYNC); // will not be added if not in the root_blackboard_
+      sync_manager_->addToSyncMap(key, SyncStatus::TO_SYNC, root_blackboard_); // will not be added if not in the root_blackboard_
     }
 
     //Create debug_tree_ptr
@@ -630,34 +551,26 @@ namespace BT_SERVER
 
   SyncMap TreeWrapper::getKeysValueToSync ()
   {
-    std::scoped_lock lock{syncMap_lock_};  // protect this block  
-    SyncMap ports_to_be_sync_cpy;
-    for(auto& element : syncMap_)
-    {
-      BT_SERVER::SyncEntry sync_entry_cp = element.second.getSafeCopy();
-      if(sync_entry_cp.entry && 
-          !sync_entry_cp.entry->value.empty() &&
-          // (!sync_entry_cp.entry->value.empty() || !BT::missingTypeInfo(sync_entry_cp.entry->info.type())) && // shall be not empty or shall have at least a type to be shared 
-          sync_entry_cp.status == SyncStatus::TO_SYNC || sync_entry_cp.status == SyncStatus::SYNCING)
-      {
-        ports_to_be_sync_cpy.emplace(element.first, std::move(sync_entry_cp));
-      }
-    }
-    return ports_to_be_sync_cpy;
+    return sync_manager_->getKeysValueToSync();
   }
-
+  bool TreeWrapper::updateSyncMapEntrySyncStatus(const std::string& key, SyncStatus sync_status)
+  {
+    return sync_manager_->updateSyncMapEntrySyncStatus(key, sync_status);
+  }
+  bool TreeWrapper::updateSyncMapEntrySyncStatus(const std::string& key, SyncStatus expected_sync_status, SyncStatus new_sync_status)
+  {
+    return sync_manager_->updateSyncMapEntrySyncStatus(key, expected_sync_status, new_sync_status);
+  }
+  bool TreeWrapper::checkSyncStatus(const std::string& key, SyncStatus sync_status)
+  {
+    return sync_manager_->checkSyncStatus(key, sync_status);
+  }
   std::vector<std::string> TreeWrapper::getSyncKeysList()
   {
-    std::vector<std::string> keys;
-
-    {
-      std::scoped_lock lock{syncMap_lock_};  // protect this block
-      keys.reserve(syncMap_.size()); // Reserve space to avoid unnecessary allocations
-      for (const auto& element : syncMap_)
-      {
-        keys.push_back(element.first);
-      }
-    }
-    return keys;
+    return sync_manager_->getSyncKeysList();
+  }
+  void TreeWrapper::checkForToSyncEntries()
+  {
+    return sync_manager_->checkForToSyncEntries(root_blackboard_);
   }
 }

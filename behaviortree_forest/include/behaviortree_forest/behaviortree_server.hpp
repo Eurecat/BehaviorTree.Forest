@@ -9,6 +9,7 @@
 #include "behaviortree_eut_plugins/eut_factory.h"
 
 #include "behaviortree_forest_interfaces/msg/bb_entry.hpp"
+#include "behaviortree_forest_interfaces/msg/bb_entries.hpp"
 #include "behaviortree_forest_interfaces/msg/tree_execution_status.hpp"
 
 #include "behaviortree_forest_interfaces/srv/load_tree.hpp"
@@ -34,6 +35,7 @@ using std::placeholders::_1;
 using std::placeholders::_2;
 
 using BBEntry = behaviortree_forest_interfaces::msg::BBEntry;
+using BBEntries = behaviortree_forest_interfaces::msg::BBEntries;
 using TreeStatus = behaviortree_forest_interfaces::msg::TreeExecutionStatus;
 using LoadTreeSrv = behaviortree_forest_interfaces::srv::LoadTree;
 using TreeRequestSrv = behaviortree_forest_interfaces::srv::TreeRequest;
@@ -81,7 +83,9 @@ namespace BT_SERVER
       bool getTreeStatusCB(const std::shared_ptr<GetTreeStatusSrv::Request> req, std::shared_ptr<GetTreeStatusSrv::Response> res);
       bool getAllTreeStatusCB(const std::shared_ptr<GetAllTreeStatusSrv::Request> req, std::shared_ptr<GetAllTreeStatusSrv::Response> res);
       void treeStatusTopicCB(const TreeStatus::SharedPtr msg);
-      void syncBBCB(const BBEntry::SharedPtr msg) const;
+      void syncBBCB(const BBEntries::SharedPtr msg) const;
+      void syncBB(const BBEntry& msg) const;
+      void republishUpdatedSyncEntries(const BBEntries::SharedPtr msg) const;
       void initBB(const std::string& abs_file_path, BT::Blackboard::Ptr blackboard_ptr);
 
       template<typename T>
@@ -134,10 +138,10 @@ namespace BT_SERVER
       // rclcpp::Client<TriggerSrv>::SharedPtr  pause_service_client_;
       // rclcpp::Client<TriggerSrv>::SharedPtr resume_service_client_;
       //Subscribers
-      rclcpp::Subscription<BBEntry>::SharedPtr sync_bb_sub_;
+      rclcpp::Subscription<BBEntries>::SharedPtr sync_bb_sub_;
       
       //Publishers
-      rclcpp::Publisher<BBEntry>::SharedPtr sync_bb_pub_;
+      rclcpp::Publisher<BBEntries>::SharedPtr sync_bb_pub_;
 
       //Sync BB
       BT::Blackboard::Ptr sync_blackboard_ptr_;

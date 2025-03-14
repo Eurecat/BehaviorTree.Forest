@@ -10,6 +10,7 @@
 #include "std_srvs/srv/trigger.hpp"
 
 #include "behaviortree_forest_interfaces/msg/bb_entry.hpp"
+#include "behaviortree_forest_interfaces/msg/bb_entries.hpp"
 #include "behaviortree_forest_interfaces/srv/get_loaded_plugins.hpp"
 #include "behaviortree_forest_interfaces/srv/get_bb_values.hpp"
 
@@ -19,6 +20,7 @@ using std::placeholders::_1;
 using std::placeholders::_2;
 
 using BBEntry = behaviortree_forest_interfaces::msg::BBEntry;
+using BBEntries = behaviortree_forest_interfaces::msg::BBEntries;
 using GetLoadedPluginsSrv = behaviortree_forest_interfaces::srv::GetLoadedPlugins;
 using GetTreeStatusSrv = behaviortree_forest_interfaces::srv::GetTreeStatus;
 using GetBBValues = behaviortree_forest_interfaces::srv::GetBBValues;
@@ -40,7 +42,8 @@ namespace BT_SERVER
       void sendBlackboardUpdates(const SyncMap& entries_map);
       void getBlackboardUpdates();
       
-      void syncBBUpdateCB(const BBEntry::SharedPtr _topic_msg);
+      void syncBBUpdateCB(const BBEntries::SharedPtr _topic_msg);
+      void syncBBUpdate(const BBEntry& _topic_msg);
       bool getLoadedPluginsCB(const std::shared_ptr<GetLoadedPluginsSrv::Request> _request, std::shared_ptr<GetLoadedPluginsSrv::Response> _response);
       bool stopTreeCB(const std::shared_ptr<EmptySrv::Request> _request, std::shared_ptr<EmptySrv::Response> _response);
       bool killTreeCB(const std::shared_ptr<EmptySrv::Request> _request, std::shared_ptr<EmptySrv::Response> _response);
@@ -79,10 +82,10 @@ namespace BT_SERVER
       rclcpp::Service<GetTreeStatusSrv>::SharedPtr get_tree_status_srv_;
 
       //Subscribers
-      rclcpp::Subscription<BBEntry>::SharedPtr sync_bb_sub_;
+      rclcpp::Subscription<BBEntries>::SharedPtr sync_bb_sub_;
 
       //Publishers
-      rclcpp::Publisher<BBEntry>::SharedPtr sync_bb_pub_;
+      rclcpp::Publisher<BBEntries>::SharedPtr sync_bb_pub_;
 
       //Timers
       rclcpp::TimerBase::SharedPtr check_paused_timer_; 

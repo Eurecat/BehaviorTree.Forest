@@ -10,6 +10,7 @@ find_package(builtin_interfaces REQUIRED)
 
 rosidl_generate_interfaces(behaviortree_forest_interfaces
     "msg/BBEntry.msg"
+    "msg/BBEntries.msg"
     "msg/TreeExecutionStatus.msg"
     "msg/Transition.msg"
     "srv/GetAllTreesStatus.srv"
