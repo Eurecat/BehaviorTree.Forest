@@ -46,7 +46,6 @@ namespace BT_SERVER
       if(syncmapentry_it != syncMap_.end())
       {
         return syncmapentry_it->second.updateSyncStatus(sync_status);
-        return true;
       }
       return false;
     }
@@ -58,7 +57,6 @@ namespace BT_SERVER
       if(syncmapentry_it != syncMap_.end())
       {
         return syncmapentry_it->second.updateSyncStatus(expected_sync_status, new_sync_status);
-        return true;
       }
       return false;
     }

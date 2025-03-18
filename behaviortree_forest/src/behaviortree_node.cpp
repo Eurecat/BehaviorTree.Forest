@@ -184,7 +184,9 @@ namespace BT_SERVER
       //   RCLCPP_ERROR(node_->get_logger(), "Sync Key: %s with type [%s] has not got a Value", ser_entry.first.c_str(), ser_entry.second.second->info.typeName().c_str() );
       // }
     }
-    sync_bb_pub_->publish(bb_entries_msg);
+    
+    if (!bb_entries_msg.entries.empty())
+      sync_bb_pub_->publish(bb_entries_msg);
   }
 
   void BehaviorTreeNode::getBlackboardUpdates()

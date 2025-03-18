@@ -304,8 +304,9 @@ namespace BT_SERVER
         return;
       }
       
-      
-      updateSyncMapEntrySyncStatus(_single_upd.key, SyncStatus::SYNCED); // being it yours or from another tree, mark it as synced
+      if (!updateSyncMapEntrySyncStatus(_single_upd.key, SyncStatus::SYNCED))  // being it yours or from another tree, mark it as synced
+        RCLCPP_ERROR(this->node_->get_logger(),"[BTWrapper %s]::syncBBUpdateCB Key [%s] failed to set status value [SYNCED]", 
+        tree_name_.c_str(), _single_upd.key.c_str());
   }
 
   void TreeWrapper::resetLoggers()
