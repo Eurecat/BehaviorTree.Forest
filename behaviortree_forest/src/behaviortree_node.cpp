@@ -17,11 +17,11 @@ namespace BT_SERVER
     //Fetch Tree Parameters
     getParameters(node);
 
-    get_loaded_plugins_srv_ =node->create_service<GetLoadedPluginsSrv>("/"+tree_name_+"/get_loaded_plugins",std::bind(&BehaviorTreeNode::getLoadedPluginsCB,this,_1,_2), rmw_qos_profile_services_default, srv_cb_group_);
-    stop_tree_srv_ = node_->create_service<EmptySrv>("/"+tree_name_+"/stop_tree",std::bind(&BehaviorTreeNode::stopTreeCB,this,_1,_2), rmw_qos_profile_services_default, srv_cb_group_);
-    kill_tree_srv_ = node_->create_service<EmptySrv>("/"+tree_name_+"/kill_tree",std::bind(&BehaviorTreeNode::killTreeCB,this,_1,_2), rmw_qos_profile_services_default, srv_cb_group_);
-    restart_tree_srv_ = node_->create_service<EmptySrv>("/"+tree_name_+"/restart_tree",std::bind(&BehaviorTreeNode::restartTreeCB,this,_1,_2), rmw_qos_profile_services_default, srv_cb_group_);
-    get_tree_status_srv_ = node_->create_service<GetTreeStatusSrv>("/"+tree_name_+"/status_tree",std::bind(&BehaviorTreeNode::statusTreeCB,this,_1,_2), rmw_qos_profile_services_default, srv_cb_group_);
+    get_loaded_plugins_srv_ =node->create_service<GetLoadedPluginsSrv>("/"+tree_name_+"/get_loaded_plugins",std::bind(&BehaviorTreeNode::getLoadedPluginsCB,this,_1,_2), rclcpp::QoS(rclcpp::ServicesQoS()), srv_cb_group_);
+    stop_tree_srv_ = node_->create_service<EmptySrv>("/"+tree_name_+"/stop_tree",std::bind(&BehaviorTreeNode::stopTreeCB,this,_1,_2), rclcpp::QoS(rclcpp::ServicesQoS()), srv_cb_group_);
+    kill_tree_srv_ = node_->create_service<EmptySrv>("/"+tree_name_+"/kill_tree",std::bind(&BehaviorTreeNode::killTreeCB,this,_1,_2), rclcpp::QoS(rclcpp::ServicesQoS()), srv_cb_group_);
+    restart_tree_srv_ = node_->create_service<EmptySrv>("/"+tree_name_+"/restart_tree",std::bind(&BehaviorTreeNode::restartTreeCB,this,_1,_2), rclcpp::QoS(rclcpp::ServicesQoS()), srv_cb_group_);
+    get_tree_status_srv_ = node_->create_service<GetTreeStatusSrv>("/"+tree_name_+"/status_tree",std::bind(&BehaviorTreeNode::statusTreeCB,this,_1,_2), rclcpp::QoS(rclcpp::ServicesQoS()), srv_cb_group_);
 
 
         // Define the subscription options
@@ -64,8 +64,8 @@ namespace BT_SERVER
     // Publish Paused Status Timer
     if (tree_debug_)
     {
-      pause_tree_srv_  = node->create_service<TriggerSrv>("/"+tree_name_+"/pause_tree", std::bind(&BehaviorTreeNode::pauseTreeCB,this,_1,_2),rmw_qos_profile_services_default, srv_cb_group_);
-      resume_tree_srv_  = node->create_service<TriggerSrv>("/"+tree_name_+"/resume_tree", std::bind(&BehaviorTreeNode::resumeTreeCB,this,_1,_2),rmw_qos_profile_services_default, srv_cb_group_);
+      pause_tree_srv_  = node->create_service<TriggerSrv>("/"+tree_name_+"/pause_tree", std::bind(&BehaviorTreeNode::pauseTreeCB,this,_1,_2),rclcpp::QoS(rclcpp::ServicesQoS()), srv_cb_group_);
+      resume_tree_srv_  = node->create_service<TriggerSrv>("/"+tree_name_+"/resume_tree", std::bind(&BehaviorTreeNode::resumeTreeCB,this,_1,_2),rclcpp::QoS(rclcpp::ServicesQoS()), srv_cb_group_);
       check_paused_timer_ = node_->create_wall_timer(std::chrono::milliseconds(1000/loop_rate_), std::bind(&BehaviorTreeNode::checkPausedCB,this));
     }
 
