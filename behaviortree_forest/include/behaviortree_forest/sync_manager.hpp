@@ -11,19 +11,31 @@ namespace BT_SERVER
     {
 
     public:
-        SyncManager(const rclcpp::Node::SharedPtr& node);
+        SyncManager(const rclcpp::Node::SharedPtr& node, BT::Blackboard::Ptr blackboard, const std::string& bt_uid);
         ~SyncManager();
 
         std::vector<std::string> getSyncKeysList();
         SyncMap getKeysValueToSync ();
+
+        /*
+            Retrieve sync entry returning empty argument if it does not exist
+        */
+        BT::Expected<SyncEntry> getSyncEntry(const std::string& key);
+        bool hasSyncStatus(const std::string& key, SyncStatus sync_status);
+        
         bool updateSyncMapEntrySyncStatus(const std::string& key, SyncStatus sync_status);
-        bool updateSyncMapEntrySyncStatus(const std::string& key, SyncStatus expected_sync_status, SyncStatus new_sync_status) ;
-        bool addToSyncMap(const std::string& bb_key, SyncStatus sync_status, BT::Blackboard::Ptr blackboard_) ;
-        std::pair<bool, SyncEntry> checkForSyncKey(const std::string& key);
-        bool checkSyncStatus(const std::string& key, SyncStatus sync_status);
-        void checkForToSyncEntries(BT::Blackboard::Ptr blackboard_);
+        bool updateSyncMapEntrySyncStatus(const std::string& key, SyncStatus expected_sync_status, SyncStatus new_sync_status);
+        
+
+        bool addToSyncMap(const std::string& bb_key, SyncStatus sync_status) ;
+        // bool rmFromSyncMap(const std::string& bb_key) ;
+        
     private:
+        void refreshSyncMap();        
+        
         rclcpp::Node::SharedPtr node_;
+        BT::Blackboard::Ptr blackboard_;
+        const std::string bt_uid_;
         std::mutex syncMap_lock_;
         SyncMap syncMap_;
     };

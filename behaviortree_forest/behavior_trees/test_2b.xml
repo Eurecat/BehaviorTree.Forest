@@ -5,7 +5,7 @@
         <KeepRunningUntilFailure>
             <ForceSuccess>
                 <Sequence>
-                    <MonitorStdInt topic_name="/max_num" serialized_output="$${max_num_json}"/>
+                    <MonitorJsonStdInt topic_name="/max_num" serialized_output="$${max_num_json}"/>
                     <AccessJsonField input="$${max_num_json}" field="/data" output="{max_num}"/>
                     <Sleep msec="500"/>
                     <RandomInt max="{max_num}" min="0" result="$${rnd}"/>

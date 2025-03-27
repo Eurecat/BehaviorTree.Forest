@@ -10,8 +10,12 @@ namespace BT_SERVER
     eut_bt_factory_(BT::EutBehaviorTreeFactory(std::make_shared<BT::BehaviorTreeFactory>())), 
     tree_ptr_(nullptr)
   {
-    sync_manager_ = std::make_shared<SyncManager>(node);
     root_blackboard_ = BT::Blackboard::create();
+  }
+
+  void TreeWrapper::initSyncManager()
+  {
+    sync_manager_ = std::make_shared<SyncManager>(node_, root_blackboard_, tree_name_);
   }
 
   TreeWrapper::~TreeWrapper() {}
@@ -176,8 +180,8 @@ namespace BT_SERVER
         tree_name_.c_str(), _single_upd.key.c_str(), _single_upd.value.c_str(), _single_upd.type.c_str());
 
       //Check that the Entry received is Sync for this BT
-      const auto& checked_sync_entry = sync_manager_->checkForSyncKey(_single_upd.key);
-      if (!checked_sync_entry.first || !checked_sync_entry.second.entry) return;
+      const auto& checked_sync_entry = sync_manager_->getSyncEntry(_single_upd.key);
+      if (!checked_sync_entry.has_value() || !checked_sync_entry.value().entry) return;
 
       //Updates are republished from bt_server, check that the update comes from another BT before processing the value and update the BB
       if (_single_upd.bt_id != tree_name_)
@@ -298,13 +302,14 @@ namespace BT_SERVER
         }
       }
 
-      if(_single_upd.bt_id == tree_name_ && _single_upd.sender_sequence_id < checked_sync_entry.second.entry->sequence_id)
+      if(_single_upd.bt_id == tree_name_)
       {
-        // This is supposed to be the ACK for the sync sent by this tree and it's an old one, so the variable cannot be considered synced (yet)
-        return;
+        std::scoped_lock entry_lock(checked_sync_entry.value().entry->entry_mutex);
+        if(_single_upd.sender_sequence_id < checked_sync_entry.value().entry->sequence_id)  // This is supposed to be the ACK for the sync sent by this tree and it's an old one, so the variable cannot be considered synced (yet)
+          return;
       }
       
-      if (!updateSyncMapEntrySyncStatus(_single_upd.key, SyncStatus::SYNCED))  // being it yours or from another tree, mark it as synced
+      if (! sync_manager_->updateSyncMapEntrySyncStatus(_single_upd.key, SyncStatus::SYNCED))  // being it yours or from another tree, mark it as synced
         RCLCPP_ERROR(this->node_->get_logger(),"[BTWrapper %s]::syncBBUpdateCB Key [%s] failed to set status value [SYNCED]", 
         tree_name_.c_str(), _single_upd.key.c_str());
   }
@@ -476,20 +481,25 @@ namespace BT_SERVER
   {
     try 
     {
-        // ROS_INFO("Initializing BB from YAML file %s", abs_file_path.c_str());
+        RCLCPP_INFO(node_->get_logger(),"Initializing BB from YAML file %s", abs_file_path.c_str());
         YAML::Node config = YAML::LoadFile(abs_file_path);
         for(YAML::const_iterator it=config.begin();it!=config.end();++it)
         {
             std::string bb_key = it->first.as<std::string>();
             std::string bb_val = it->second.as<std::string>();
             
-            //Check if is a SyncKey --> ${key}
-            bool sync_entry = isSharedBlackboardPointer(bb_key);
+            //Check if is a SyncKey --> $${key}
+            bool sync_entry = bb_key.length() > 3 && bb_key[0] == '$' && bb_key[1] == '$';
+            // std::cout << "isSharedBlackboardPointer("<<bb_key<<") " << std::to_string(sync_entry) << "\n" << std::flush;
+            //Remove First '$$' if is a SyncKey
+            if (sync_entry) 
+            {
+              bb_key.erase(0, 2);
 
-            //Remove First '$' if is a SyncKey
-            if (sync_entry) {bb_key.erase(0, 1);}
+              // std::cout << "isSharedBlackboardPointer("<<bb_key<<") " << bb_key << "\n" << std::flush;
+            }
 
-            //TODO: Inferred Values
+            //TODO: Devis Inferred Values
             /*const BT::Expected<std::string> bbentry_value_inferred_keyvalues = replaceKeysWithStringValues(bb_val, root_blackboard_, true); // no effect if it has no key
             if(!bbentry_value_inferred_keyvalues)
             {
@@ -510,7 +520,7 @@ namespace BT_SERVER
             //ADD VALUE TO SYNC MAP
             if (sync_entry)
             {
-              sync_manager_->addToSyncMap(bb_key, SyncStatus::TO_SYNC, root_blackboard_);
+              sync_manager_->addToSyncMap(bb_key, SyncStatus::TO_SYNC);
             }
         }
         RCLCPP_INFO(node_->get_logger(),"Initialized BB with %ld entries from YAML file %s", root_blackboard_->getKeys().size(), abs_file_path.c_str());
@@ -542,7 +552,7 @@ namespace BT_SERVER
     //Add the syncKeys to the syncMap
     for (auto key: sync_keys)
     {
-      sync_manager_->addToSyncMap(key, SyncStatus::TO_SYNC, root_blackboard_); // will not be added if not in the root_blackboard_
+      sync_manager_->addToSyncMap(key, SyncStatus::TO_SYNC); // will not be added if not in the root_blackboard_
     }
 
     //Create debug_tree_ptr
@@ -562,16 +572,16 @@ namespace BT_SERVER
   {
     return sync_manager_->updateSyncMapEntrySyncStatus(key, expected_sync_status, new_sync_status);
   }
-  bool TreeWrapper::checkSyncStatus(const std::string& key, SyncStatus sync_status)
+  bool TreeWrapper::hasSyncStatus(const std::string& key, SyncStatus sync_status)
   {
-    return sync_manager_->checkSyncStatus(key, sync_status);
+    return sync_manager_->hasSyncStatus(key, sync_status);
   }
   std::vector<std::string> TreeWrapper::getSyncKeysList()
   {
     return sync_manager_->getSyncKeysList();
   }
-  void TreeWrapper::checkForToSyncEntries()
-  {
-    return sync_manager_->checkForToSyncEntries(root_blackboard_);
-  }
+  // void TreeWrapper::refreshSyncMap()
+  // {
+  //   return sync_manager_->refreshSyncMap(root_blackboard_);
+  // }
 }

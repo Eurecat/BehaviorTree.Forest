@@ -5,7 +5,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
-#include <unordered_set>
+#include <mutex>
 
 #include "behaviortree_eut_plugins/utils/eut_utils.h"
 
@@ -82,21 +82,30 @@ namespace BT_SERVER
           return *this;
       }
 
+      void updateBBEntry(const std::shared_ptr<BT::Blackboard::Entry> entry_ptr)
+      {
+        std::scoped_lock lock_sync_entry(sync_entry_mutex);
+        entry = entry_ptr;
+      }
+
       bool updateSyncStatus(SyncStatus sync_status)
       {
-        std::scoped_lock lock_entry(sync_entry_mutex);
+        std::scoped_lock lock_sync_entry(sync_entry_mutex);
         status = sync_status;
+        std::scoped_lock lock_entry(entry->entry_mutex);
         if(status == SyncStatus::SYNCED) last_synced = entry->stamp;
+        // std::cout << "updateSyncStatus to " << ((sync_status == SyncStatus::TO_SYNC)? "TO_SYNC" : "BB") << std::endl;
         return true;
       }
 
       // Update only if expected_sync_status == current_status
       bool updateSyncStatus(SyncStatus expected_sync_status, SyncStatus new_sync_status)
       {
-        std::scoped_lock lock_entry(sync_entry_mutex);
+        std::scoped_lock lock_sync_entry(sync_entry_mutex);
         if(expected_sync_status == status)
         {
           status = new_sync_status;
+          std::scoped_lock lock_entry(entry->entry_mutex);
           if(status == SyncStatus::SYNCED) last_synced = entry->stamp;
           return true;
         }
@@ -106,8 +115,14 @@ namespace BT_SERVER
 
       SyncStatus syncStatus() const
       {
-        std::scoped_lock lock_entry(sync_entry_mutex);
+        std::scoped_lock lock_sync_entry(sync_entry_mutex);
         return status;
+      }
+
+      std::chrono::nanoseconds lastSynced() const
+      {
+        std::scoped_lock lock_sync_entry(sync_entry_mutex);
+        return last_synced;
       }
 
       /*
@@ -115,7 +130,7 @@ namespace BT_SERVER
       */
       SyncEntry getSafeCopy() const
       {
-        std::scoped_lock lock_entry(sync_entry_mutex);
+        std::scoped_lock lock_sync_entry(sync_entry_mutex);
         return SyncEntry(entry, status, last_synced);
       }
     };
@@ -159,7 +174,10 @@ namespace BT_SERVER
 
   /**
    * Replace every key reference with its string value, throws if even one referenced key does not exist
+   * TODO Devis review this functionality as soon as possible
   */
+
+  /*
   inline BT::Expected<std::string> replaceKeysWithStringValues(const std::string& boosted_key, BT::Blackboard::Ptr bb_ptr, const bool fail_with_invalid_reference = false)
   {
       std::string res = "";
@@ -207,5 +225,6 @@ namespace BT_SERVER
       }
       return res;
   }
+  */
 }
 #endif

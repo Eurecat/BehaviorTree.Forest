@@ -46,6 +46,8 @@ namespace BT_SERVER
     void loadAllPlugins();
     void initBB();
     void initStatusPublisher();
+    void initSyncManager();
+    
     TreeStatus buildTreeExecutionStatus();
     void updatePublishTreeExecutionStatus(const BT::NodeAdvancedStatus status, const bool avoid_duplicate = true);
     void publishExecutionStatus(bool error=false, std::string error_data="");
@@ -72,13 +74,14 @@ namespace BT_SERVER
 
     void syncBBUpdateCB(const BBEntry& _single_upd);
     void syncBBUpdateCB(const std::vector<BBEntry>& _bulk_upd);
+
     SyncMap getKeysValueToSync ();
 
     bool updateSyncMapEntrySyncStatus(const std::string& key, SyncStatus sync_status);
     bool updateSyncMapEntrySyncStatus(const std::string& key, SyncStatus expected_sync_status, SyncStatus new_sync_status); 
-    bool checkSyncStatus(const std::string& key, SyncStatus sync_status);
+    bool hasSyncStatus(const std::string& key, SyncStatus sync_status);
 
-    void checkForToSyncEntries();
+    // void refreshSyncMap();
     std::vector<std::string> getSyncKeysList();
 
     //Tree Status

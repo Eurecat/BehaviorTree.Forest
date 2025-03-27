@@ -562,19 +562,20 @@ namespace BT_SERVER
             const std::string& bb_key = it->first.as<std::string>();
             std::string bb_val = it->second.as<std::string>();
             
-            const BT::Expected<std::string> bbentry_value_inferred_keyvalues = replaceKeysWithStringValues(bb_val,blackboard_ptr); // no effect if it has no key
-            if(!bbentry_value_inferred_keyvalues)
+            // TODO Devis inferred key values within other values to be developed still... 
+            // const BT::Expected<std::string> bbentry_value_inferred_keyvalues = replaceKeysWithStringValues(bb_val,blackboard_ptr); // no effect if it has no key
+            // if(!bbentry_value_inferred_keyvalues)
+            // {
+            //     // but will complain if it has a reference to a wrong key
+            //     RCLCPP_WARN(node_->get_logger(), "Init. of BB key %s for value %s, value inference did not succeed: %s", 
+            //         bb_key.c_str(), 
+            //         bb_val.c_str(),
+            //         bbentry_value_inferred_keyvalues.error().c_str());
+            //     continue; // and skip this init
+            // }
+            // else
             {
-                // but will complain if it has a reference to a wrong key
-                RCLCPP_WARN(node_->get_logger(), "Init. of BB key %s for value %s, value inference did not succeed: %s", 
-                    bb_key.c_str(), 
-                    bb_val.c_str(),
-                    bbentry_value_inferred_keyvalues.error().c_str());
-                continue; // and skip this init
-            }
-            else
-            {
-              bb_val = bbentry_value_inferred_keyvalues.value();
+              // bb_val = bbentry_value_inferred_keyvalues.value();
               
               // use the string here and blackboard_ptr->set(...)
               blackboard_ptr->set(bb_key, bb_val);

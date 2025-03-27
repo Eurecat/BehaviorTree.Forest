@@ -12,7 +12,7 @@
                         <Script code="max_num = max_num - rnd"/>
                         <Script code="max_num = max_num + rnd"/>
                     </IfThenElse>
-                    <PublishStdInt topic_name="/max_num" data="{max_num}" />
+                    <PublishAutoStdInt topic_name="/max_num" data="{max_num}" />
                 </Sequence>
             </ForceSuccess>
         </KeepRunningUntilFailure>

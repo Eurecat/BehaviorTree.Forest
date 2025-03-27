@@ -7,15 +7,18 @@
 
 namespace BT_SERVER
 {
-  BehaviorTreeNode::BehaviorTreeNode(const rclcpp::Node::SharedPtr& node) : tree_wrapper_(node), 
+  BehaviorTreeNode::BehaviorTreeNode(const rclcpp::Node::SharedPtr& node) : 
     node_(node), 
-    executor_(rclcpp::executors::MultiThreadedExecutor(rclcpp::ExecutorOptions(), 2))
+    executor_(rclcpp::executors::MultiThreadedExecutor(rclcpp::ExecutorOptions(), 2)),
+    tree_wrapper_(node)
   {
     srv_cb_group_ = node_->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
     bb_upd_cb_group_ = node_->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
 
     //Fetch Tree Parameters
     getParameters(node);
+    
+    tree_wrapper_.initSyncManager();
 
     get_loaded_plugins_srv_ =node->create_service<GetLoadedPluginsSrv>("/"+tree_name_+"/get_loaded_plugins",std::bind(&BehaviorTreeNode::getLoadedPluginsCB,this,_1,_2), rclcpp::QoS(rclcpp::ServicesQoS()), srv_cb_group_);
     stop_tree_srv_ = node_->create_service<EmptySrv>("/"+tree_name_+"/stop_tree",std::bind(&BehaviorTreeNode::stopTreeCB,this,_1,_2), rclcpp::QoS(rclcpp::ServicesQoS()), srv_cb_group_);
@@ -174,7 +177,7 @@ namespace BT_SERVER
         bb_entry_msg.bt_id = tree_name_;
         bb_entry_msg.sender_sequence_id = ser_entry.second.entry->sequence_id;
         
-        if(tree_wrapper_.updateSyncMapEntrySyncStatus(bb_entry_msg.key, SyncStatus::TO_SYNC, SyncStatus::SYNCING) || tree_wrapper_.checkSyncStatus(bb_entry_msg.key,SyncStatus::SYNCING))
+        if(tree_wrapper_.updateSyncMapEntrySyncStatus(bb_entry_msg.key, SyncStatus::TO_SYNC, SyncStatus::SYNCING) || tree_wrapper_.hasSyncStatus(bb_entry_msg.key,SyncStatus::SYNCING))
         {
           bb_entries_msg.entries.push_back(bb_entry_msg);
         }
@@ -234,7 +237,7 @@ namespace BT_SERVER
               const auto tree_status = tree_wrapper_.tickTree(); 
               RCLCPP_DEBUG(node_->get_logger(),"TICK ONCE %s OK", tree_wrapper_.tree_name_.c_str());
 
-              tree_wrapper_.checkForToSyncEntries(); 
+              // tree_wrapper_.refreshSyncMap(); 
 
               sendBlackboardUpdates(tree_wrapper_.getKeysValueToSync());
               
