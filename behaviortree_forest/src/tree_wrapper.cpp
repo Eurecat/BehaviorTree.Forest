@@ -15,7 +15,7 @@ namespace BT_SERVER
 
   void TreeWrapper::initSyncManager()
   {
-    sync_manager_ = std::make_shared<SyncManager>(node_, root_blackboard_, tree_name_);
+    sync_manager_ = std::make_shared<SyncManager>(node_, root_blackboard_, /* std::to_string(tree_uid_) + */ tree_name_);
   }
 
   TreeWrapper::~TreeWrapper() {}
@@ -175,7 +175,10 @@ namespace BT_SERVER
   {
       //Check that the tree is loaded
       if(!isTreeLoaded()) return;
+      sync_manager_->processSyncEntryUpdate(_single_upd);
 
+      return;
+      /*
       RCLCPP_DEBUG(this->node_->get_logger(), "[BTWrapper %s]::syncBBUpdateCB\tkey=%s,\tvalue=%s,\ttype=%s", 
         tree_name_.c_str(), _single_upd.key.c_str(), _single_upd.value.c_str(), _single_upd.type.c_str());
 
@@ -312,6 +315,7 @@ namespace BT_SERVER
       if (! sync_manager_->updateSyncMapEntrySyncStatus(_single_upd.key, SyncStatus::SYNCED))  // being it yours or from another tree, mark it as synced
         RCLCPP_ERROR(this->node_->get_logger(),"[BTWrapper %s]::syncBBUpdateCB Key [%s] failed to set status value [SYNCED]", 
         tree_name_.c_str(), _single_upd.key.c_str());
+      */
   }
 
   void TreeWrapper::resetLoggers()
@@ -514,6 +518,13 @@ namespace BT_SERVER
                 bb_val = bbentry_value_inferred_keyvalues.value();*/
 
             RCLCPP_DEBUG(node_->get_logger(),"Init. BB key [\"%s\"] with value \"%s\"", bb_key.c_str(), bb_val.c_str());
+
+            if(const auto entry_info_ptr = root_blackboard_->entryInfo(bb_key))
+            {
+              if(!entry_info_ptr->isStronglyTyped())
+                root_blackboard_->unset(bb_key);
+            }
+
             // use the string here and blackboard_ptr->set(...)
             root_blackboard_->set(bb_key, bb_val);
             

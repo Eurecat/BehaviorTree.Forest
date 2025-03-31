@@ -503,8 +503,7 @@ namespace BT_SERVER
   {
     for (auto key : req->keys)
     {
-
-      auto bb_entry_str = BT::EutUtils::getEntryAsString(key,sync_blackboard_ptr_);
+      auto bb_entry_str = BT::EutUtils::eutToJsonString(key, sync_blackboard_ptr_);
       if(bb_entry_str.has_value())
       {
           BBEntry bb_entry;

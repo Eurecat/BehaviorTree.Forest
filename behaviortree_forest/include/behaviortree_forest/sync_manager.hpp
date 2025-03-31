@@ -5,6 +5,12 @@
 
 #include "behaviortree_forest/sync_blackboard.hpp"
 
+#include "behaviortree_forest_interfaces/msg/bb_entry.hpp"
+#include "behaviortree_forest_interfaces/msg/bb_entries.hpp"
+
+using BBEntry = behaviortree_forest_interfaces::msg::BBEntry;
+using BBEntries = behaviortree_forest_interfaces::msg::BBEntries;
+
 namespace BT_SERVER
 {
     class SyncManager
@@ -26,10 +32,13 @@ namespace BT_SERVER
         bool updateSyncMapEntrySyncStatus(const std::string& key, SyncStatus sync_status);
         bool updateSyncMapEntrySyncStatus(const std::string& key, SyncStatus expected_sync_status, SyncStatus new_sync_status);
         
-
         bool addToSyncMap(const std::string& bb_key, SyncStatus sync_status) ;
         // bool rmFromSyncMap(const std::string& bb_key) ;
         
+
+        void syncBBUpdateCB(const BBEntries::SharedPtr sync_entries_upd_msg);
+        void processSyncEntryUpdate(const BBEntry& sync_entry_upd);
+
     private:
         void refreshSyncMap();        
         
@@ -38,6 +47,12 @@ namespace BT_SERVER
         const std::string bt_uid_;
         std::mutex syncMap_lock_;
         SyncMap syncMap_;
+
+
+        rclcpp::CallbackGroup::SharedPtr bb_upd_cb_group_;
+
+        //Subscribers
+        rclcpp::Subscription<BBEntries>::SharedPtr sync_bb_sub_;
     };
 } // namespace BT_SERVER
 #endif // SYNC_MANAGER_HPP

@@ -29,9 +29,9 @@ namespace BT_SERVER
 
         // Define the subscription options
     rclcpp::SubscriptionOptions sync_bb_sub_options;
-    sync_bb_sub_options.callback_group = bb_upd_cb_group_;  // Attach the subscription to the callback group
+    // sync_bb_sub_options.callback_group = bb_upd_cb_group_;  // Attach the subscription to the callback group
     // Updates subscriber server side
-    sync_bb_sub_ = node_->create_subscription<BBEntries>("behavior_tree_forest/broadcast_update", 10, std::bind(&BehaviorTreeNode::syncBBUpdateCB, this, _1), sync_bb_sub_options);
+    // sync_bb_sub_ = node_->create_subscription<BBEntries>("behavior_tree_forest/broadcast_update", 10, std::bind(&BehaviorTreeNode::syncBBUpdateCB, this, _1), sync_bb_sub_options);
     
     // Updates republisher for all trees (put latch to true atm, because seems a good option that you receive last update from the server)
     sync_bb_pub_ = node_->create_publisher<BBEntries>("/behavior_tree_forest/local_update", 10);
@@ -43,12 +43,18 @@ namespace BT_SERVER
     {
       //Load Plugins
       tree_wrapper_.loadAllPlugins();
+      
+      //Load Tree
+      if (!loadTree()) {return;}
+      tree_wrapper_.rootBlackboard()->debugMessage();
 
       //Create Blackboard
       tree_wrapper_.initBB();
 
-      //Load Tree
-      if (!loadTree()) {return;}
+      // Send Sync Blackboard updates
+      sendBlackboardUpdates(tree_wrapper_.getKeysValueToSync()); // send updates 
+      // ASK DAVID we are assuming it can never run standalone!
+      getBlackboardUpdates(); // blocking call to update bb with missing values that need to be retrieved from server
       
       RCLCPP_INFO(node_->get_logger(),"Tree %s loaded OK; following current blackboard dump:", tree_wrapper_.tree_name_.c_str());
       tree_wrapper_.rootBlackboard()->debugMessage();
@@ -100,11 +106,6 @@ namespace BT_SERVER
       tree_wrapper_.publishExecutionStatus(true,error_str);
       return false;
     }
-
-    // Send Sync Blackboard updates
-    sendBlackboardUpdates(tree_wrapper_.getKeysValueToSync()); // send updates 
-    // ASK DAVID we are assuming it can never run standalone!
-    getBlackboardUpdates(); // blocking call to update bb with missing values that need to be retrieved from server
 
     //Init Loggers
     tree_wrapper_.initLoggers();

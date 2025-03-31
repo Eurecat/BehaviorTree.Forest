@@ -47,7 +47,7 @@ namespace BT_SERVER
     void initBB();
     void initStatusPublisher();
     void initSyncManager();
-    
+
     TreeStatus buildTreeExecutionStatus();
     void updatePublishTreeExecutionStatus(const BT::NodeAdvancedStatus status, const bool avoid_duplicate = true);
     void publishExecutionStatus(bool error=false, std::string error_data="");
