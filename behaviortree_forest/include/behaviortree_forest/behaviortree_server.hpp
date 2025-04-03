@@ -84,8 +84,8 @@ namespace BT_SERVER
       bool getAllTreeStatusCB(const std::shared_ptr<GetAllTreeStatusSrv::Request> req, std::shared_ptr<GetAllTreeStatusSrv::Response> res);
       void treeStatusTopicCB(const TreeStatus::SharedPtr msg);
       void syncBBCB(const BBEntries::SharedPtr msg) const;
-      void syncBB(const BBEntry& msg) const;
-      void republishUpdatedSyncEntries(const BBEntries::SharedPtr msg) const;
+      bool syncBB(const BBEntry& msg) const;
+      void republishUpdatedSyncEntries(const BBEntries& msg) const;
       void initBB(const std::string& abs_file_path, BT::Blackboard::Ptr blackboard_ptr);
 
       template<typename T>

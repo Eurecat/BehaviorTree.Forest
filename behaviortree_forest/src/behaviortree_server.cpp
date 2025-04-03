@@ -59,13 +59,16 @@ namespace BT_SERVER
   }
   void BehaviorTreeServer::syncBBCB(const BBEntries::SharedPtr msg) const
   {
+    BBEntries msg_republish_entries;
     for(const auto& entry : msg->entries)
     {
-      syncBB(entry);
+      // Return boolean and affect republish below
+      if(syncBB(entry))
+        msg_republish_entries.entries.push_back(entry);
     }
-    republishUpdatedSyncEntries(msg);
+    republishUpdatedSyncEntries(msg_republish_entries);
   }
-  void BehaviorTreeServer::syncBB(const BBEntry& msg) const
+  bool BehaviorTreeServer::syncBB(const BBEntry& msg) const
   {
     RCLCPP_DEBUG(node_->get_logger(), "Received a Sync Update from %s BT. Key: '%s' Type: '%s' Value: '%s'", msg.bt_id.c_str(), msg.key.c_str(),msg.type.c_str(), msg.value.c_str());
 
@@ -96,7 +99,7 @@ namespace BT_SERVER
             RCLCPP_WARN(node_->get_logger(),"Failed to update sync port in SERVER BB for key [%s] with value [%s] : Type inconsistency type %s, but received %s", 
               msg.key.c_str(), msg.value.c_str(),
               msg.type.c_str(), entry_ptr->info.typeName().c_str());
-            return;
+            return false;
           }
         }
       }
@@ -108,7 +111,7 @@ namespace BT_SERVER
         if(!entry_ptr || !BT::isStronglyTyped(msg.type))
         {
           if(!msg.value.empty()) sync_blackboard_ptr_->set(msg.key, msg.value); // no type and stringified value both side
-          else return; // no type, no value
+          else return false; // no type, no value
         }
         else
         {
@@ -128,7 +131,7 @@ namespace BT_SERVER
       catch(const std::exception& e)
       {
         RCLCPP_ERROR(node_->get_logger(),"Failed to update sync port in SERVER BB for key [%s] with value [%s] : %s", msg.key.c_str(), msg.value.c_str(), e.what());
-        return;
+        return false;
       }
     }
 
@@ -191,16 +194,17 @@ namespace BT_SERVER
     upd_msg.sender_sequence_id = msg.sender_sequence_id;
     sync_bb_pub_->publish(upd_msg);*/
     RCLCPP_DEBUG(node_->get_logger(), "Sync Port %s Updated on BT_Server BB succesfully",msg.key.c_str());
+    return true;
   }
 
-  void BehaviorTreeServer::republishUpdatedSyncEntries(const BBEntries::SharedPtr msg) const
+  void BehaviorTreeServer::republishUpdatedSyncEntries(const BBEntries& msg) const
   {
     BBEntries entries;
-    for (const auto& entry : msg->entries)
+    for (const auto& entry : msg.entries)
     {
       BBEntry upd_msg;
       upd_msg.key = entry.key;
-      upd_msg.type = sync_blackboard_ptr_->getEntry(entry.key)->info.typeName() ;
+      upd_msg.type = sync_blackboard_ptr_->getEntry(entry.key)->info.typeName();
       upd_msg.value = entry.value;
       upd_msg.bt_id = entry.bt_id;
       upd_msg.sender_sequence_id = entry.sender_sequence_id;
