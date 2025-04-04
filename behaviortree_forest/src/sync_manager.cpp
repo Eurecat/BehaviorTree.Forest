@@ -5,8 +5,8 @@ using std::placeholders::_1;
 
 namespace BT_SERVER
 {
-    SyncManager::SyncManager(const rclcpp::Node::SharedPtr& node, BT::Blackboard::Ptr blackboard, const std::string& bt_uid)
-    : node_(node), blackboard_(blackboard), bt_uid_(bt_uid)
+    SyncManager::SyncManager(const rclcpp::Node::SharedPtr& node, BT::Blackboard::Ptr blackboard, const std::string& bt_uid, const BT::EutBehaviorTreeFactory& eut_bt_factory)
+    : node_(node), blackboard_(blackboard), bt_uid_(bt_uid), eut_bt_factory_(eut_bt_factory)
     {
       bb_upd_cb_group_ = node_->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
 
@@ -127,26 +127,42 @@ namespace BT_SERVER
         processSyncEntryUpdate(sync_entry_upd);
     }
 
-    void SyncManager::processSyncEntryUpdate(const BBEntry& sync_entry_upd)
+    bool SyncManager::processSyncEntryUpdate(const BBEntry& sync_entry_upd)
     {
       RCLCPP_DEBUG(this->node_->get_logger(), "[SyncManager %s]::syncBBUpdateCB\tkey=%s,\tvalue=%s,\ttype=%s", 
           bt_uid_.c_str(), sync_entry_upd.key.c_str(), sync_entry_upd.value.c_str(), sync_entry_upd.type.c_str());
 
       //Check that the Entry received is Sync for this BT
       const auto& checked_sync_entry = getSyncEntry(sync_entry_upd.key);
-      if (!checked_sync_entry.has_value() || !checked_sync_entry.value().entry) return;
+      if (!checked_sync_entry.has_value() || !checked_sync_entry.value().entry) return false;
 
       RCLCPP_INFO(this->node_->get_logger(), "[SyncManager %s]::syncBBUpdateCB processing \tkey=%s,\tvalue=%s,\ttype=%s,\tbt_id=%s", 
           bt_uid_.c_str(), sync_entry_upd.key.c_str(), sync_entry_upd.value.c_str(), sync_entry_upd.type.c_str(), sync_entry_upd.bt_id.c_str());
-      //Updates are republished from bt_server, check that the update comes from another BT before processing the value and update the BB
-      if (sync_entry_upd.bt_id != bt_uid_)
+      
+      bool update_successful = false;
+      //Get the Entry
+      std::shared_ptr<BT::Blackboard::Entry> entry_ptr = blackboard_->getEntry(sync_entry_upd.key); // in principle the same as checked_sync_entry.second.entry, in practice could have been already deleted from the BB
+      
+      if(entry_ptr)
       {
-        bool update_successful = false;
+        //Updates are republished from bt_server, check that the update comes from another BT before processing the value and update the BB 
+        // or if the type has been changed to a strongly typed one from the server
+        if (sync_entry_upd.bt_id != bt_uid_ || sync_entry_upd.type != BT::demangle(entry_ptr->info.type()))
+        {
+          // const bool void_type = (sync_entry_upd.type == BT::demangle(typeid(void))); // source tree does not know the type of the value //TODO Check how bt.cpp v4 handle void: directly with Any??
+          //retrieve string converter functor
+          // const BT::StringConverter* string_converter_ptr = (void_type || !entry_ptr)? nullptr : &entry_ptr->string_converter;
+          
+          //check string converter functor
+          // if(!void_type && string_converter_ptr == nullptr)
+          // {
+          //     RCLCPP_ERROR(node_->get_logger(),"[SyncManager %s] Entry in Sync. BB for key [%s] has type [%s], but no string converter can be found for this type", 
+          //         bt_uid_.c_str(), sync_entry_upd.key.c_str(), sync_entry_upd.type.c_str());
+          //     return;
+          // }
         
         // const bool void_type = (sync_entry_upd.type == BT::demangle(typeid(void))); // source tree does not know the type of the value //TODO Check how bt.cpp v4 handle void: directly with Any??
 
-        //Get the Entry
-        std::shared_ptr<BT::Blackboard::Entry> entry_ptr = blackboard_->getEntry(sync_entry_upd.key); // in principle the same as checked_sync_entry.second.entry, in practice could have been already deleted from the BB
 
         // //retrieve string converter functor
         // const BT::StringConverter* string_converter_ptr = (void_type || !entry_ptr)? nullptr : &entry_ptr->string_converter;
@@ -159,9 +175,6 @@ namespace BT_SERVER
         //     return;
         // }
 
-        //retrieve current entry in bt server bb
-        if(entry_ptr)
-        {
             // if(entry_ptr->port_info.missingTypeInfo()) is it necessary??? I would not update type info if received from another tree (i.e. from void to type T, with T != void)
             // {
             //     BT::Optional<BT::PortInfo> port_info_opt = bt_factory_ptr->getPortInfo(sync_entry_upd.type);
@@ -186,7 +199,7 @@ namespace BT_SERVER
                  entry_ptr->info.typeName().c_str(), sync_entry_upd.type.c_str());
             if(BT::isStronglyTyped(sync_entry_upd.type) && entry_ptr->info.isStronglyTyped() && sync_entry_upd.type != entry_ptr->info.typeName())
             {
-              if(entry_ptr->value.isNumber() && BT::isNumberType(sync_entry_upd.type))
+              if((entry_ptr->value.isNumber() || entry_ptr->value.isType<bool>()) && BT::isNumberType(sync_entry_upd.type))
               {
                 // will be treated later within the library in the blackboard->set(...) call and might be still acceptable
               }
@@ -197,7 +210,7 @@ namespace BT_SERVER
                   bt_uid_.c_str(),
                   sync_entry_upd.key.c_str(), sync_entry_upd.value.c_str(),
                   entry_ptr->info.typeName().c_str(), sync_entry_upd.type.c_str());
-                return;
+                return false;
               }
             }
 
@@ -206,23 +219,61 @@ namespace BT_SERVER
               BT::JsonExporter::ExpectedEntry expected_entry = {};
               if(!BT::isStronglyTyped(sync_entry_upd.type) && entry_ptr->info.isStronglyTyped())
               {
-                BT::Any any = (entry_ptr->info.converter())(sync_entry_upd.value);
-                blackboard_->set(sync_entry_upd.key, std::move(any));
+                // CASE A: Remote Entry !StronglyTyped & Local Entry StronglyTyped
+                // BT::Any any = (entry_ptr->info.converter())(sync_entry_upd.value);
+                // blackboard_->set(sync_entry_upd.key, std::move(any));
+                blackboard_->set(sync_entry_upd.key, sync_entry_upd.value);
                 // if(sync_entry_upd.value.empty()) return;
               }
               else if(!BT::isStronglyTyped(sync_entry_upd.type) && !entry_ptr->info.isStronglyTyped())
               {
-                if(!sync_entry_upd.value.empty()) blackboard_->set(sync_entry_upd.key, sync_entry_upd.value); // no type and stringified value both side (maintain unknown type)
-                else return; // no type, no value
+                // CASE B: Remote Entry !StronglyTyped & Local Entry !StronglyTyped
+                if(!sync_entry_upd.value.empty()) 
+                {
+                  blackboard_->set(sync_entry_upd.key, sync_entry_upd.value); // no type and stringified value both side (maintain unknown type)
+                  {
+                    std::scoped_lock lock(entry_ptr->entry_mutex);
+                    entry_ptr->info = BT::TypeInfo(); //BT::AnyTypeAllowed;
+                  }
+                }
+                else return false; // no type, no value
               }
               else
               {
+                // CASE C: Remote Entry StronglyTyped & Local Entry !StronglyTyped
+                // CASE D: Remote Entry StronglyTyped & Local Entry StronglyTyped
+                
+                bool strongly_typing = BT::isStronglyTyped(sync_entry_upd.type) && !entry_ptr->info.isStronglyTyped(); // CASE C
+                BT::TypeInfo type_info = entry_ptr->info;
+                if(strongly_typing)
+                {
+                  BT::Expected<BT::TypeInfo> new_type_info = eut_bt_factory_.getTypeInfo(sync_entry_upd.type);
+                  if(!new_type_info.has_value())
+                  {
+                    RCLCPP_WARN(node_->get_logger(),"[SyncManager %s]::syncBBUpdateCB Failed to update sync port from SERVER for key [%s] with value [%s] unknown type %s", 
+                        bt_uid_.c_str(),
+                        sync_entry_upd.key.c_str(), sync_entry_upd.value.c_str(),
+                        sync_entry_upd.type.c_str());
+                    return false;
+                  }
+                  type_info = new_type_info.value();
+                }
+
+
                 RCLCPP_INFO(node_->get_logger(),"[SyncManager %s]::syncBBUpdateCB about to parse as a json sync port from SERVER for key [%s] with value [%s]", 
                   bt_uid_.c_str(),
                   sync_entry_upd.key.c_str(), sync_entry_upd.value.c_str());
                 const nlohmann::json json_value = nlohmann::json::parse(sync_entry_upd.value);
-                expected_entry = BT::EutUtils::eutFromJson(json_value, entry_ptr->info.type());
-                if(expected_entry.has_value()) blackboard_->set(sync_entry_upd.key, std::move(expected_entry.value().first));
+                expected_entry = BT::EutUtils::eutFromJson(json_value, strongly_typing? type_info.type() : entry_ptr->info.type()); // TODO Fix bug of the type for Case C
+                if(expected_entry.has_value()) 
+                {
+                  blackboard_->set(sync_entry_upd.key, std::move(expected_entry.value().first));
+                  if(strongly_typing) // CASE C
+                  {
+                    std::scoped_lock lock(entry_ptr->entry_mutex);
+                    entry_ptr->info = type_info;
+                  }
+                }
                 else 
                   RCLCPP_WARN(node_->get_logger(),"[SyncManager %s]::syncBBUpdateCB Failed to update sync port from SERVER for key [%s] with value [%s] not expected %s", 
                   bt_uid_.c_str(),
@@ -252,24 +303,29 @@ namespace BT_SERVER
             {
               RCLCPP_WARN(this->node_->get_logger(), "[SyncManager %s]::syncBBUpdateCB fail to update value in BB for \tkey=%s,\tvalue=%s,\ttype=%s, error %s", 
                 bt_uid_.c_str(), sync_entry_upd.key.c_str(), sync_entry_upd.value.c_str(), sync_entry_upd.type.c_str(), e.what());
-              return;
+              return false;
             }
 
             // std::cout << "[BTWrapper "<<tree_identifier_<<"]::syncBBUpdateCB updated value in BB for key [" << sync_entry_upd.key << "] \n" << std::flush;
             // update_successful = true;
         }
+        
+        
+        if(sync_entry_upd.bt_id == bt_uid_)
+        {
+          std::scoped_lock entry_lock(checked_sync_entry.value().entry->entry_mutex);
+          if(sync_entry_upd.sender_sequence_id < checked_sync_entry.value().entry->sequence_id)  // This is supposed to be the ACK for the sync sent by this tree and it's an old one, so the variable cannot be considered synced (yet)
+            return false; // do not update the status, it is not yet synced
+        }
+        
+        if (updateSyncMapEntrySyncStatus(sync_entry_upd.key, SyncStatus::SYNCED))  // being it yours or from another tree, mark it as synced
+          update_successful = true;
+        else 
+          RCLCPP_ERROR(this->node_->get_logger(),"[SyncManager %s]::syncBBUpdateCB Key [%s] failed to set status value [SYNCED]", 
+            bt_uid_.c_str(), sync_entry_upd.key.c_str());
       }
+      return update_successful;
 
-      if(sync_entry_upd.bt_id == bt_uid_)
-      {
-        std::scoped_lock entry_lock(checked_sync_entry.value().entry->entry_mutex);
-        if(sync_entry_upd.sender_sequence_id < checked_sync_entry.value().entry->sequence_id)  // This is supposed to be the ACK for the sync sent by this tree and it's an old one, so the variable cannot be considered synced (yet)
-          return;
-      }
-      
-      if (!updateSyncMapEntrySyncStatus(sync_entry_upd.key, SyncStatus::SYNCED))  // being it yours or from another tree, mark it as synced
-        RCLCPP_ERROR(this->node_->get_logger(),"[SyncManager %s]::syncBBUpdateCB Key [%s] failed to set status value [SYNCED]", 
-        bt_uid_.c_str(), sync_entry_upd.key.c_str());
     }
 
 

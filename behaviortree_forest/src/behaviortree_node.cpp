@@ -157,7 +157,7 @@ namespace BT_SERVER
       {
         BBEntry bb_entry_msg;
         bb_entry_msg.key = ser_entry.first;
-        bb_entry_msg.type = BT::demangle(ser_entry.second.entry->info.type()); //ser_entry.second.entry->info.typeName();
+        bb_entry_msg.type = BT::demangle(ser_entry.second.entry->info.type()); //ser_entry.second.entry->info.typeName(); //TODO Devis consistency with server
        
         if (val.has_value())
         {

@@ -15,7 +15,7 @@ namespace BT_SERVER
 
   void TreeWrapper::initSyncManager()
   {
-    sync_manager_ = std::make_shared<SyncManager>(node_, root_blackboard_, /* std::to_string(tree_uid_) + */ tree_name_);
+    sync_manager_ = std::make_shared<SyncManager>(node_, root_blackboard_, /* std::to_string(tree_uid_) + */ tree_name_, eut_bt_factory_);
   }
 
   TreeWrapper::~TreeWrapper() {}

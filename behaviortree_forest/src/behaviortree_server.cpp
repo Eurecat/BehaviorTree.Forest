@@ -74,14 +74,24 @@ namespace BT_SERVER
 
     if(sync_blackboard_ptr_)
     {
+      // CASE A: Remote Entry !StronglyTyped & Local Entry StronglyTyped
+      // CASE B: Remote Entry !StronglyTyped & Local Entry !StronglyTyped
+      // CASE C: Remote Entry StronglyTyped & Local Entry !StronglyTyped
+      // CASE D: Remote Entry StronglyTyped & Local Entry StronglyTyped
+                
       auto entry_ptr = sync_blackboard_ptr_->getEntry(msg.key);
 
-      if(!entry_ptr || !entry_ptr->info.isStronglyTyped() && BT::isStronglyTyped(msg.type)) // entry does not exist or existed with no type and now I know type
+      if(!entry_ptr || !entry_ptr->info.isStronglyTyped() /*&& BT::isStronglyTyped(msg.type)*/) // entry does not exist or existed with no type and now I know type
       {
+        // CASE B, C
         sync_blackboard_ptr_->unset(msg.key);
         BT::TypeInfo type_info = eut_bt_factory_.getTypeInfo(msg.type).value_or(BT::TypeInfo()); // fallback to AnyTypeAllowed
-        sync_blackboard_ptr_->createEntry(msg.key, type_info);
-        entry_ptr = sync_blackboard_ptr_->getEntry(msg.key); // update entry ptr
+        if(type_info.isStronglyTyped())
+        {
+          // CASE C
+          sync_blackboard_ptr_->createEntry(msg.key, type_info);
+          entry_ptr = sync_blackboard_ptr_->getEntry(msg.key); // update entry ptr
+        }
       }
 
       // type safety checks
@@ -89,7 +99,7 @@ namespace BT_SERVER
       { 
         if(BT::isStronglyTyped(msg.type) && entry_ptr->info.isStronglyTyped() && msg.type != entry_ptr->info.typeName())
         {
-          if(entry_ptr->value.isNumber() && BT::isNumberType(msg.type))
+          if((entry_ptr->value.isNumber() || entry_ptr->value.isType<bool>()) && BT::isNumberType(msg.type))
           {
             // will be treated later within the library in the blackboard->set(...) call and might be still acceptable
           }
@@ -110,11 +120,13 @@ namespace BT_SERVER
         BT::JsonExporter::ExpectedEntry expected_entry = {};
         if(!entry_ptr || !BT::isStronglyTyped(msg.type))
         {
+          // CASE A, B
           if(!msg.value.empty()) sync_blackboard_ptr_->set(msg.key, msg.value); // no type and stringified value both side
           else return false; // no type, no value
         }
         else
         {
+          // CASE D (case C directly treated above)
           const nlohmann::json json_value = nlohmann::json::parse(msg.value);
           RCLCPP_DEBUG(node_->get_logger(),"Sync port in SERVER BB for key [%s] with value parsed to json [%s] : type of parsed json [%s]", msg.key.c_str(), json_value.dump().c_str(), json_value.type_name());
           
@@ -205,10 +217,12 @@ namespace BT_SERVER
       BBEntry upd_msg;
       upd_msg.key = entry.key;
       upd_msg.type = sync_blackboard_ptr_->getEntry(entry.key)->info.typeName();
-      upd_msg.value = entry.value;
+      auto val = BT::EutUtils::eutToJsonString(entry.key, sync_blackboard_ptr_);
+      upd_msg.value = val.value_or("");
       upd_msg.bt_id = entry.bt_id;
       upd_msg.sender_sequence_id = entry.sender_sequence_id;
-      entries.entries.push_back(upd_msg);
+      if(val.has_value())
+        entries.entries.push_back(upd_msg);
     }
     sync_bb_pub_->publish(entries);
   }

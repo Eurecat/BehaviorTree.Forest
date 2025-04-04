@@ -7,6 +7,7 @@
 
 #include "behaviortree_forest_interfaces/msg/bb_entry.hpp"
 #include "behaviortree_forest_interfaces/msg/bb_entries.hpp"
+#include "behaviortree_eut_plugins/eut_factory.h"
 
 using BBEntry = behaviortree_forest_interfaces::msg::BBEntry;
 using BBEntries = behaviortree_forest_interfaces::msg::BBEntries;
@@ -17,7 +18,7 @@ namespace BT_SERVER
     {
 
     public:
-        SyncManager(const rclcpp::Node::SharedPtr& node, BT::Blackboard::Ptr blackboard, const std::string& bt_uid);
+        SyncManager(const rclcpp::Node::SharedPtr& node, BT::Blackboard::Ptr blackboard, const std::string& bt_uid, const BT::EutBehaviorTreeFactory& eut_bt_factory);
         ~SyncManager();
 
         std::vector<std::string> getSyncKeysList();
@@ -37,7 +38,7 @@ namespace BT_SERVER
         
 
         void syncBBUpdateCB(const BBEntries::SharedPtr sync_entries_upd_msg);
-        void processSyncEntryUpdate(const BBEntry& sync_entry_upd);
+        bool processSyncEntryUpdate(const BBEntry& sync_entry_upd);
 
     private:
         void refreshSyncMap();        
@@ -47,6 +48,8 @@ namespace BT_SERVER
         const std::string bt_uid_;
         std::mutex syncMap_lock_;
         SyncMap syncMap_;
+
+        const BT::EutBehaviorTreeFactory& eut_bt_factory_;
 
 
         rclcpp::CallbackGroup::SharedPtr bb_upd_cb_group_;
