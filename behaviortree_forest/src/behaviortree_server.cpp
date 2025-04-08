@@ -70,7 +70,8 @@ namespace BT_SERVER
   }
   bool BehaviorTreeServer::syncBB(const BBEntry& msg) const
   {
-    RCLCPP_DEBUG(node_->get_logger(), "Received a Sync Update from %s BT. Key: '%s' Type: '%s' Value: '%s'", msg.bt_id.c_str(), msg.key.c_str(),msg.type.c_str(), msg.value.c_str());
+    std::string remote_entry_type_str = msg.type.rfind("nlohmann::json", 0) == std::string::npos ? msg.type : "json" ;
+    RCLCPP_INFO(node_->get_logger(), "RX Sync Update from [%s]. Key: '%s' Type: '%s' Value: '%s'", msg.bt_id.c_str(), msg.key.c_str(),remote_entry_type_str.c_str(), msg.value.c_str());
 
     if(sync_blackboard_ptr_)
     {
@@ -105,10 +106,12 @@ namespace BT_SERVER
           }
           else
           {
+            std::string current_entry_type_str = entry_ptr->info.typeName().rfind("nlohmann::json", 0) == std::string::npos ? entry_ptr->info.typeName() : "json" ;
+      
             // unacceptable inconsistency
             RCLCPP_WARN(node_->get_logger(),"Failed to update sync port in SERVER BB for key [%s] with value [%s] : Type inconsistency type %s, but received %s", 
               msg.key.c_str(), msg.value.c_str(),
-              msg.type.c_str(), entry_ptr->info.typeName().c_str());
+              remote_entry_type_str.c_str(), current_entry_type_str.c_str());
             return false;
           }
         }
@@ -597,10 +600,14 @@ namespace BT_SERVER
               // use the string here and blackboard_ptr->set(...)
               blackboard_ptr->set(bb_key, bb_val);
               const auto entry_n = blackboard_ptr->getEntry(bb_key);
+              std::string entry_type_info_str = BT::demangle(entry_n->info.type()).rfind("nlohmann::json", 0) == std::string::npos ? BT::demangle(entry_n->info.type()) : "json";
+              std::string entry_type_valuetype_str = BT::demangle(entry_n->value.type()).rfind("nlohmann::json", 0) == std::string::npos ? BT::demangle(entry_n->value.type()) : "json";
+              std::string entry_type_casted_str = BT::demangle(entry_n->value.castedType()).rfind("nlohmann::json", 0) == std::string::npos ? BT::demangle(entry_n->value.castedType()) : "json";
               RCLCPP_DEBUG(node_->get_logger(), "Init. BB key [\"%s\"] with value \"%s\" et %s t %s, ct %s", 
               bb_key.c_str(), bb_val.c_str(),
-              BT::demangle(entry_n->info.type()).c_str(),
-              BT::demangle(entry_n->value.type()).c_str(), BT::demangle(entry_n->value.castedType()).c_str());
+              entry_type_info_str.c_str(),
+              entry_type_valuetype_str.c_str(), 
+              entry_type_casted_str.c_str());
         
             }
         }  

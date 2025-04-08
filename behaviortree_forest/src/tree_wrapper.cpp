@@ -570,7 +570,10 @@ namespace BT_SERVER
     debug_tree_ptr = std::make_shared<BT::DebuggableTree>(tree_ptr_,tree_debug);
 
   }
-
+  BBEntries TreeWrapper::getSyncEntriesToPublish(const std::string bt_id)
+  {
+    return sync_manager_->getSyncEntriesToPublish(bt_id);
+  }
   SyncMap TreeWrapper::getKeysValueToSync ()
   {
     return sync_manager_->getKeysValueToSync();

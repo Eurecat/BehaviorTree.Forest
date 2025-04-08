@@ -146,8 +146,8 @@ namespace BT_SERVER
 
   void BehaviorTreeNode::sendBlackboardUpdates(const SyncMap& entries_map)
   {
-    BBEntries bb_entries_msg;
-    for(const auto& ser_entry : entries_map)
+    BBEntries bb_entries_msg = tree_wrapper_.getSyncEntriesToPublish(tree_wrapper_.tree_name_);
+    /*for(const auto& ser_entry : entries_map)
     {
       RCLCPP_DEBUG(node_->get_logger(), "sendBlackboardUpdate on key: %s", ser_entry.first.c_str());
       //Check Sync Value is initialized
@@ -187,7 +187,7 @@ namespace BT_SERVER
       // {
       //   RCLCPP_ERROR(node_->get_logger(), "Sync Key: %s with type [%s] has not got a Value", ser_entry.first.c_str(), ser_entry.second.second->info.typeName().c_str() );
       // }
-    }
+    }*/
     
     if (!bb_entries_msg.entries.empty())
       sync_bb_pub_->publish(bb_entries_msg);

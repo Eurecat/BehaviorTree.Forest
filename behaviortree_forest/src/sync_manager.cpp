@@ -120,7 +120,44 @@ namespace BT_SERVER
       return false;
     }
 
+    BBEntries SyncManager::getSyncEntriesToPublish(const std::string bt_id)
+    {
+      BT_SERVER::SyncMap entries_map = getKeysValueToSync();
 
+      BBEntries entries;
+      for(const auto& ser_entry : entries_map)
+      {
+          const std::shared_ptr<BT::Blackboard::Entry> entry_check_ptr = blackboard_->getEntry(ser_entry.first);  
+          if(entry_check_ptr)
+          {
+              BBEntry message;
+              message.key = ser_entry.first;
+              message.type = BT::demangle(entry_check_ptr->info.type());
+              auto val = BT::EutUtils::eutToJsonString(ser_entry.first, blackboard_);
+              if (val.has_value())
+                  message.value = val.value();
+              else
+                  message.value = "";
+              message.bt_id = bt_id;
+              message.sender_sequence_id = entry_check_ptr->sequence_id;
+              //RCLCPP_INFO(nh_->get_logger(),"KnowledgeManager Adding ToPubEntry -> KEY: %s TYPE: %s VAL: %s", message.key.c_str(), message.type.c_str(), message.value.c_str());
+                   
+              if(updateSyncMapEntrySyncStatus(ser_entry.first, SyncStatus::TO_SYNC, SyncStatus::SYNCING) || hasSyncStatus(ser_entry.first,SyncStatus::SYNCING))
+              {
+                  entries.entries.push_back(message);
+              }
+              else
+              {
+                std::cerr << "[SyncManager]::getSyncEntriesToPublish Error getting entry [" << ser_entry.first << "] To publish!" << std::endl;
+              }
+          }
+          else
+          {
+            std::cerr << "[SyncManager]::getSyncEntriesToPublish Error getting entry [" << ser_entry.first << "] To publish!" << std::endl;
+          }
+      }
+      return entries;
+    }
     void SyncManager::syncBBUpdateCB(const BBEntries::SharedPtr sync_entries_upd_msg)
     {
       for(const auto& sync_entry_upd : sync_entries_upd_msg->entries)
@@ -129,15 +166,16 @@ namespace BT_SERVER
 
     bool SyncManager::processSyncEntryUpdate(const BBEntry& sync_entry_upd)
     {
-      RCLCPP_DEBUG(this->node_->get_logger(), "[SyncManager %s]::syncBBUpdateCB\tkey=%s,\tvalue=%s,\ttype=%s", 
-          bt_uid_.c_str(), sync_entry_upd.key.c_str(), sync_entry_upd.value.c_str(), sync_entry_upd.type.c_str());
+      std::string remote_entry_type_str = sync_entry_upd.type.rfind("nlohmann::json", 0) == std::string::npos ? sync_entry_upd.type : "json" ;
+      RCLCPP_DEBUG(this->node_->get_logger(), "[SyncManager]::syncBBUpdateCB\tkey=%s,\tvalue=%s,\ttype=%s\n", 
+           sync_entry_upd.key.c_str(), sync_entry_upd.value.c_str(), remote_entry_type_str.c_str());
 
       //Check that the Entry received is Sync for this BT
       const auto& checked_sync_entry = getSyncEntry(sync_entry_upd.key);
       if (!checked_sync_entry.has_value() || !checked_sync_entry.value().entry) return false;
 
       RCLCPP_INFO(this->node_->get_logger(), "[SyncManager %s]::syncBBUpdateCB processing \tkey=%s,\tvalue=%s,\ttype=%s,\tbt_id=%s", 
-          bt_uid_.c_str(), sync_entry_upd.key.c_str(), sync_entry_upd.value.c_str(), sync_entry_upd.type.c_str(), sync_entry_upd.bt_id.c_str());
+          bt_uid_.c_str(), sync_entry_upd.key.c_str(), sync_entry_upd.value.c_str(), remote_entry_type_str.c_str(), sync_entry_upd.bt_id.c_str());
       
       bool update_successful = false;
       //Get the Entry
@@ -171,7 +209,7 @@ namespace BT_SERVER
         // if(!void_type && string_converter_ptr == nullptr)
         // {
         //     RCLCPP_ERROR(node_->get_logger(),"[SyncManager %s] Entry in Sync. BB for key [%s] has type [%s], but no string converter can be found for this type", 
-        //         bt_uid_.c_str(), sync_entry_upd.key.c_str(), sync_entry_upd.type.c_str());
+        //         bt_uid_.c_str(), sync_entry_upd.key.c_str(), remote_entry_type_str.c_str());
         //     return;
         // }
 
@@ -180,7 +218,7 @@ namespace BT_SERVER
             //     BT::Optional<BT::PortInfo> port_info_opt = bt_factory_ptr->getPortInfo(sync_entry_upd.type);
             //     if(!port_info_opt.has_value())
             //     {
-            //         ROS_ERROR("[SyncManager %s] Entry in Sync. BB for key [%s] has type [%s], but it is an unknown type and therefore cannot be treated", tree_identifier_.c_str(), sync_entry_upd.key.c_str(), sync_entry_upd.type.c_str());
+            //         ROS_ERROR("[SyncManager %s] Entry in Sync. BB for key [%s] has type [%s], but it is an unknown type and therefore cannot be treated", tree_identifier_.c_str(), sync_entry_upd.key.c_str(), remote_entry_type_str.c_str());
             //         return; // type unknown
             //     }
             //     tree_->rootBlackboard()->setPortInfo(sync_entry_upd.key, port_info_opt.value());
@@ -190,13 +228,16 @@ namespace BT_SERVER
             // if( BT::missingTypeInfo(type_info->type())  && !void_type && sync_entry_upd.type != type_info->typeName()) //TODO evaluate strictness and checks to be made here
             // {
             //     RCLCPP_ERROR(node_->get_logger(),"[SyncManager %s]. Entry in Sync. BB for key [%s] has type [%s], but receiving requests for update with type [%s]",
-            //         bt_uid_.c_str(), sync_entry_upd.key.c_str(), type_info->typeName().c_str(), sync_entry_upd.type.c_str());
+            //         bt_uid_.c_str(), sync_entry_upd.key.c_str(), type_info->typeName().c_str(), remote_entry_type_str.c_str());
             //     return; // type inconsistencies, don't update
             // }
-             RCLCPP_DEBUG(node_->get_logger(),"[SyncManager %s]::syncBBUpdateCB Trying to update sync port from SERVER for key [%s] with value [%s] : Accepted type %s, received %s", 
-                  bt_uid_.c_str(),
-                  sync_entry_upd.key.c_str(), sync_entry_upd.value.c_str(),
-                 entry_ptr->info.typeName().c_str(), sync_entry_upd.type.c_str());
+            //  RCLCPP_DEBUG(node_->get_logger(),"[SyncManager]::syncBBUpdateCB Trying to update sync port from SERVER for key [%s] with value [%s] : Accepted type %s, received %s", 
+            //       sync_entry_upd.key.c_str(), sync_entry_upd.value.c_str(),
+            //      entry_ptr->info.typeName().c_str(), remote_entry_type_str.c_str());
+
+            std::string current_entry_type_str = entry_ptr->info.typeName().rfind("nlohmann::json", 0) == std::string::npos ? entry_ptr->info.typeName() : "json" ;
+            
+            // CHECK TYPE INCONSISTENCIES
             if(BT::isStronglyTyped(sync_entry_upd.type) && entry_ptr->info.isStronglyTyped() && sync_entry_upd.type != entry_ptr->info.typeName())
             {
               if((entry_ptr->value.isNumber() || entry_ptr->value.isType<bool>()) && BT::isNumberType(sync_entry_upd.type))
@@ -206,10 +247,9 @@ namespace BT_SERVER
               else
               {
                 // unacceptable inconsistency
-                RCLCPP_WARN(node_->get_logger(),"[SyncManager %s]::syncBBUpdateCB Failed to update sync port from SERVER for key [%s] with value [%s]; Type inconsistency: Accepted type %s, but received %s", 
-                  bt_uid_.c_str(),
+                RCLCPP_WARN(node_->get_logger(),"[SyncManager]::syncBBUpdateCB Failed to update sync port from SERVER for key [%s] with value [%s]; Type inconsistency: Accepted type %s, but received %s", 
                   sync_entry_upd.key.c_str(), sync_entry_upd.value.c_str(),
-                  entry_ptr->info.typeName().c_str(), sync_entry_upd.type.c_str());
+                  entry_ptr->info.typeName().c_str(), remote_entry_type_str.c_str());
                 return false;
               }
             }
@@ -253,7 +293,7 @@ namespace BT_SERVER
                     RCLCPP_WARN(node_->get_logger(),"[SyncManager %s]::syncBBUpdateCB Failed to update sync port from SERVER for key [%s] with value [%s] unknown type %s", 
                         bt_uid_.c_str(),
                         sync_entry_upd.key.c_str(), sync_entry_upd.value.c_str(),
-                        sync_entry_upd.type.c_str());
+                        remote_entry_type_str.c_str());
                     return false;
                   }
                   type_info = new_type_info.value();
@@ -275,8 +315,7 @@ namespace BT_SERVER
                   }
                 }
                 else 
-                  RCLCPP_WARN(node_->get_logger(),"[SyncManager %s]::syncBBUpdateCB Failed to update sync port from SERVER for key [%s] with value [%s] not expected %s", 
-                  bt_uid_.c_str(),
+                  RCLCPP_WARN(node_->get_logger(),"[SyncManager]::syncBBUpdateCB Failed to update sync port from SERVER for key [%s] with value [%s] not expected %s", 
                   sync_entry_upd.key.c_str(), sync_entry_upd.value.c_str(),
                   expected_entry.error().c_str());
               }
@@ -302,7 +341,7 @@ namespace BT_SERVER
             catch(const std::exception& e)
             {
               RCLCPP_WARN(this->node_->get_logger(), "[SyncManager %s]::syncBBUpdateCB fail to update value in BB for \tkey=%s,\tvalue=%s,\ttype=%s, error %s", 
-                bt_uid_.c_str(), sync_entry_upd.key.c_str(), sync_entry_upd.value.c_str(), sync_entry_upd.type.c_str(), e.what());
+                bt_uid_.c_str(), sync_entry_upd.key.c_str(), sync_entry_upd.value.c_str(), remote_entry_type_str.c_str(), e.what());
               return false;
             }
 

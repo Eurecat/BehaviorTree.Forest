@@ -39,10 +39,9 @@ namespace BT_SERVER
 
         void syncBBUpdateCB(const BBEntries::SharedPtr sync_entries_upd_msg);
         bool processSyncEntryUpdate(const BBEntry& sync_entry_upd);
-
+        BBEntries getSyncEntriesToPublish(const std::string bt_id);
     private:
-        void refreshSyncMap();        
-        
+        void refreshSyncMap();
         rclcpp::Node::SharedPtr node_;
         BT::Blackboard::Ptr blackboard_;
         const std::string bt_uid_;
