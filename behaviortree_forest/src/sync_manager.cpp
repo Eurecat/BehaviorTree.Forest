@@ -12,6 +12,10 @@ namespace BT_SERVER
 
       rclcpp::SubscriptionOptions sync_bb_sub_options;
       sync_bb_sub_options.callback_group = bb_upd_cb_group_;  // Attach the subscription to the callback group
+      
+      // Updates republisher for all trees (put latch to true atm, because seems a good option that you receive last update from the server)
+      sync_bb_pub_ = node->create_publisher<BBEntries>("/behavior_tree_forest/local_update", 10);
+
       // Updates subscriber server side
       sync_bb_sub_ = node->create_subscription<BBEntries>("behavior_tree_forest/broadcast_update", 10, std::bind(&SyncManager::syncBBUpdateCB, this, _1), sync_bb_sub_options);
     }
@@ -120,12 +124,10 @@ namespace BT_SERVER
       return false;
     }
 
-    BBEntries SyncManager::getSyncEntriesToPublish(const std::string bt_id)
+    void SyncManager::publishUpdatedSyncEntries()
     {
-      BT_SERVER::SyncMap entries_map = getKeysValueToSync();
-
-      BBEntries entries;
-      for(const auto& ser_entry : entries_map)
+      BBEntries bb_entries_msg;
+      for(const auto& ser_entry : getKeysValueToSync())
       {
           const std::shared_ptr<BT::Blackboard::Entry> entry_check_ptr = blackboard_->getEntry(ser_entry.first);  
           if(entry_check_ptr)
@@ -138,26 +140,26 @@ namespace BT_SERVER
                   message.value = val.value();
               else
                   message.value = "";
-              message.bt_id = bt_id;
+              message.bt_id = bt_uid_;
               message.sender_sequence_id = entry_check_ptr->sequence_id;
               //RCLCPP_INFO(nh_->get_logger(),"KnowledgeManager Adding ToPubEntry -> KEY: %s TYPE: %s VAL: %s", message.key.c_str(), message.type.c_str(), message.value.c_str());
                    
               if(updateSyncMapEntrySyncStatus(ser_entry.first, SyncStatus::TO_SYNC, SyncStatus::SYNCING) || hasSyncStatus(ser_entry.first,SyncStatus::SYNCING))
               {
-                  entries.entries.push_back(message);
-              }
-              else
-              {
-                std::cerr << "[SyncManager]::getSyncEntriesToPublish Error getting entry [" << ser_entry.first << "] To publish!" << std::endl;
+                bb_entries_msg.entries.push_back(message);
               }
           }
           else
           {
-            std::cerr << "[SyncManager]::getSyncEntriesToPublish Error getting entry [" << ser_entry.first << "] To publish!" << std::endl;
+            RCLCPP_WARN( node_->get_logger(), "[SyncManager]::publishUpdatedSyncEntries Error getting entry [%s] to publish!", ser_entry.first.c_str());
           }
       }
-      return entries;
+
+      // Publish iff there is at least one item
+      if (!bb_entries_msg.entries.empty())
+        sync_bb_pub_->publish(bb_entries_msg);
     }
+
     void SyncManager::syncBBUpdateCB(const BBEntries::SharedPtr sync_entries_upd_msg)
     {
       for(const auto& sync_entry_upd : sync_entries_upd_msg->entries)
@@ -166,16 +168,16 @@ namespace BT_SERVER
 
     bool SyncManager::processSyncEntryUpdate(const BBEntry& sync_entry_upd)
     {
-      std::string remote_entry_type_str = sync_entry_upd.type.rfind("nlohmann::json", 0) == std::string::npos ? sync_entry_upd.type : "json" ;
+      // std::string remote_entry_type_str = sync_entry_upd.type.rfind("nlohmann::json", 0) == std::string::npos ? sync_entry_upd.type : "json" ;
       RCLCPP_DEBUG(this->node_->get_logger(), "[SyncManager]::syncBBUpdateCB\tkey=%s,\tvalue=%s,\ttype=%s\n", 
-           sync_entry_upd.key.c_str(), sync_entry_upd.value.c_str(), remote_entry_type_str.c_str());
+           sync_entry_upd.key.c_str(), sync_entry_upd.value.c_str(), BT::polishedTypeName(sync_entry_upd.type).c_str());
 
       //Check that the Entry received is Sync for this BT
       const auto& checked_sync_entry = getSyncEntry(sync_entry_upd.key);
       if (!checked_sync_entry.has_value() || !checked_sync_entry.value().entry) return false;
 
-      RCLCPP_INFO(this->node_->get_logger(), "[SyncManager %s]::syncBBUpdateCB processing \tkey=%s,\tvalue=%s,\ttype=%s,\tbt_id=%s", 
-          bt_uid_.c_str(), sync_entry_upd.key.c_str(), sync_entry_upd.value.c_str(), remote_entry_type_str.c_str(), sync_entry_upd.bt_id.c_str());
+      RCLCPP_DEBUG(this->node_->get_logger(), "[SyncManager %s]::syncBBUpdateCB processing \tkey=%s,\tvalue=%s,\ttype=%s,\tbt_id=%s", 
+          bt_uid_.c_str(), sync_entry_upd.key.c_str(), sync_entry_upd.value.c_str(), BT::polishedTypeName(sync_entry_upd.type).c_str(), sync_entry_upd.bt_id.c_str());
       
       bool update_successful = false;
       //Get the Entry
@@ -235,7 +237,7 @@ namespace BT_SERVER
             //       sync_entry_upd.key.c_str(), sync_entry_upd.value.c_str(),
             //      entry_ptr->info.typeName().c_str(), remote_entry_type_str.c_str());
 
-            std::string current_entry_type_str = entry_ptr->info.typeName().rfind("nlohmann::json", 0) == std::string::npos ? entry_ptr->info.typeName() : "json" ;
+            // std::string current_entry_type_str = entry_ptr->info.typeName().rfind("nlohmann::json", 0) == std::string::npos ? entry_ptr->info.typeName() : "json" ;
             
             // CHECK TYPE INCONSISTENCIES
             if(BT::isStronglyTyped(sync_entry_upd.type) && entry_ptr->info.isStronglyTyped() && sync_entry_upd.type != entry_ptr->info.typeName())
@@ -249,7 +251,7 @@ namespace BT_SERVER
                 // unacceptable inconsistency
                 RCLCPP_WARN(node_->get_logger(),"[SyncManager]::syncBBUpdateCB Failed to update sync port from SERVER for key [%s] with value [%s]; Type inconsistency: Accepted type %s, but received %s", 
                   sync_entry_upd.key.c_str(), sync_entry_upd.value.c_str(),
-                  entry_ptr->info.typeName().c_str(), remote_entry_type_str.c_str());
+                  entry_ptr->info.typeName().c_str(), BT::polishedTypeName(sync_entry_upd.type).c_str());
                 return false;
               }
             }
@@ -293,14 +295,14 @@ namespace BT_SERVER
                     RCLCPP_WARN(node_->get_logger(),"[SyncManager %s]::syncBBUpdateCB Failed to update sync port from SERVER for key [%s] with value [%s] unknown type %s", 
                         bt_uid_.c_str(),
                         sync_entry_upd.key.c_str(), sync_entry_upd.value.c_str(),
-                        remote_entry_type_str.c_str());
+                        BT::polishedTypeName(sync_entry_upd.type).c_str());
                     return false;
                   }
                   type_info = new_type_info.value();
                 }
 
 
-                RCLCPP_INFO(node_->get_logger(),"[SyncManager %s]::syncBBUpdateCB about to parse as a json sync port from SERVER for key [%s] with value [%s]", 
+                RCLCPP_DEBUG(node_->get_logger(),"[SyncManager %s]::syncBBUpdateCB about to parse as a json sync port from SERVER for key [%s] with value [%s]", 
                   bt_uid_.c_str(),
                   sync_entry_upd.key.c_str(), sync_entry_upd.value.c_str());
                 const nlohmann::json json_value = nlohmann::json::parse(sync_entry_upd.value);
@@ -341,7 +343,7 @@ namespace BT_SERVER
             catch(const std::exception& e)
             {
               RCLCPP_WARN(this->node_->get_logger(), "[SyncManager %s]::syncBBUpdateCB fail to update value in BB for \tkey=%s,\tvalue=%s,\ttype=%s, error %s", 
-                bt_uid_.c_str(), sync_entry_upd.key.c_str(), sync_entry_upd.value.c_str(), remote_entry_type_str.c_str(), e.what());
+                bt_uid_.c_str(), sync_entry_upd.key.c_str(), sync_entry_upd.value.c_str(), BT::polishedTypeName(sync_entry_upd.type).c_str(), e.what());
               return false;
             }
 

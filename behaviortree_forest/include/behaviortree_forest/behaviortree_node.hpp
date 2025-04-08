@@ -84,9 +84,6 @@ namespace BT_SERVER
       //Subscribers
       rclcpp::Subscription<BBEntries>::SharedPtr sync_bb_sub_;
 
-      //Publishers
-      rclcpp::Publisher<BBEntries>::SharedPtr sync_bb_pub_;
-
       //Timers
       rclcpp::TimerBase::SharedPtr check_paused_timer_; 
       rclcpp::TimerBase::SharedPtr loop_timer_; 

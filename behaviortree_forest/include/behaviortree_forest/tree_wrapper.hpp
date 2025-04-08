@@ -76,7 +76,8 @@ namespace BT_SERVER
     void syncBBUpdateCB(const std::vector<BBEntry>& _bulk_upd);
 
     SyncMap getKeysValueToSync ();
-    BBEntries getSyncEntriesToPublish(const std::string bt_id);
+    
+    void publishUpdatedSyncEntries();
     
     bool updateSyncMapEntrySyncStatus(const std::string& key, SyncStatus sync_status);
     bool updateSyncMapEntrySyncStatus(const std::string& key, SyncStatus expected_sync_status, SyncStatus new_sync_status); 

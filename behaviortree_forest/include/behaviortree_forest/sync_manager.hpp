@@ -39,7 +39,10 @@ namespace BT_SERVER
 
         void syncBBUpdateCB(const BBEntries::SharedPtr sync_entries_upd_msg);
         bool processSyncEntryUpdate(const BBEntry& sync_entry_upd);
-        BBEntries getSyncEntriesToPublish(const std::string bt_id);
+
+        /// @brief Publish sync entries that have been updated and are in TO_SYNC or SYNCING and have not ack yet
+        /// @return 
+        void publishUpdatedSyncEntries();
     private:
         void refreshSyncMap();
         rclcpp::Node::SharedPtr node_;
@@ -52,6 +55,9 @@ namespace BT_SERVER
 
 
         rclcpp::CallbackGroup::SharedPtr bb_upd_cb_group_;
+
+        //Publishers
+        rclcpp::Publisher<BBEntries>::SharedPtr sync_bb_pub_;
 
         //Subscribers
         rclcpp::Subscription<BBEntries>::SharedPtr sync_bb_sub_;

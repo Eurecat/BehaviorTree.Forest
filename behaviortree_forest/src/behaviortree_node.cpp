@@ -32,9 +32,6 @@ namespace BT_SERVER
     // sync_bb_sub_options.callback_group = bb_upd_cb_group_;  // Attach the subscription to the callback group
     // Updates subscriber server side
     // sync_bb_sub_ = node_->create_subscription<BBEntries>("behavior_tree_forest/broadcast_update", 10, std::bind(&BehaviorTreeNode::syncBBUpdateCB, this, _1), sync_bb_sub_options);
-    
-    // Updates republisher for all trees (put latch to true atm, because seems a good option that you receive last update from the server)
-    sync_bb_pub_ = node_->create_publisher<BBEntries>("/behavior_tree_forest/local_update", 10);
 
     //Init Publishers
     tree_wrapper_.initStatusPublisher();
@@ -146,7 +143,7 @@ namespace BT_SERVER
 
   void BehaviorTreeNode::sendBlackboardUpdates(const SyncMap& entries_map)
   {
-    BBEntries bb_entries_msg = tree_wrapper_.getSyncEntriesToPublish(tree_wrapper_.tree_name_);
+    tree_wrapper_.publishUpdatedSyncEntries();
     /*for(const auto& ser_entry : entries_map)
     {
       RCLCPP_DEBUG(node_->get_logger(), "sendBlackboardUpdate on key: %s", ser_entry.first.c_str());
@@ -189,8 +186,8 @@ namespace BT_SERVER
       // }
     }*/
     
-    if (!bb_entries_msg.entries.empty())
-      sync_bb_pub_->publish(bb_entries_msg);
+    // if (!bb_entries_msg.entries.empty())
+    //   sync_bb_pub_->publish(bb_entries_msg);
   }
 
   void BehaviorTreeNode::getBlackboardUpdates()
