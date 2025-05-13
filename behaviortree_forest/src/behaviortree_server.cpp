@@ -19,7 +19,7 @@ namespace BT_SERVER
     const auto ros_plugin_directories = getBTPluginsFolders(); // pkgname/bt_plugins
 
     bt_server::Params bt_params;
-    bt_params.ros_plugins_timeout = 5000;
+    bt_params.ros_plugins_timeout = 1600;
     bt_params.plugins = ros_plugin_directories;
 
     RegisterPlugins(bt_params, eut_bt_factory_.originalFactory(), node_);
@@ -37,6 +37,8 @@ namespace BT_SERVER
     get_tree_status_srv_ = node_->create_service<GetTreeStatusSrv>("behavior_tree_forest/get_tree_status",std::bind(&BehaviorTreeServer::getTreeStatusCB,this,_1,_2));
     get_all_trees_status_srv_ = node_->create_service<GetAllTreeStatusSrv>("behavior_tree_forest/get_all_trees_status",std::bind(&BehaviorTreeServer::getAllTreeStatusCB,this,_1,_2));
     
+    trees_upd_cb_group_ = node_->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+
     //Create Sync_BB and Init
     node_->declare_parameter(PARAM_NAME_SYNC_BB_INIT, "");
     std::string sync_bb_init_file =node_->get_parameter(PARAM_NAME_SYNC_BB_INIT).as_string();
@@ -267,7 +269,7 @@ namespace BT_SERVER
     while (tree_name_found)
     {
         tree_name_found = false;
-        for (auto tree_info : uids_to_tree_info_)
+        for (const auto& tree_info : uids_to_tree_info_)
         {
             if (tree_info.second.tree_name == tree_name_tmp)
             {
@@ -323,6 +325,10 @@ namespace BT_SERVER
     //CREATE ROS2 RUN MANAGER
     const char* package_name = "behaviortree_forest"; 
     const char* executable_name = "behaviortree_node";
+
+    res->tree_uid = trees_UID_;
+    res->started = false;
+    res->instantiated = false;
     try {
       if(param_bb_init.empty())
         pid = ros2_launch_manager_.start(
@@ -359,14 +365,53 @@ namespace BT_SERVER
       RCLCPP_ERROR(node_->get_logger(),"Error using ros2 run manager: %s", exception.what());
       return false;
     }
+    
+    res->started = true;
 
-    TreeProcessInfo new_process_info {tree_name,pid};
+    // monitor the tree process status
+    auto [it, inserted] = uids_to_tree_info_.try_emplace(res->tree_uid, tree_name, pid, TreeStatus::LOADING);
+    TreeProcessInfo& new_process_info = it->second;
+
     std::string topic_name = "/"+tree_name+"/execution_status";
-    new_process_info.status_subscriber =  node_->create_subscription<TreeStatus>(topic_name, 10, std::bind(&BehaviorTreeServer::treeStatusTopicCB, this, _1));
-    uids_to_tree_info_.emplace(trees_UID_,new_process_info);
-    res->tree_uid = trees_UID_;
-  
-    RCLCPP_INFO(node_->get_logger(),"Tree %s Loaded succesfully with UID %u", tree_name.c_str(), res->tree_uid);
+    rclcpp::SubscriptionOptions trees_upd_sub_options;
+    trees_upd_sub_options.callback_group = trees_upd_cb_group_;
+    // register sub with latch last msg
+    new_process_info.status_subscriber =  node_->create_subscription<TreeStatus>(topic_name, 10, std::bind(&BehaviorTreeServer::treeStatusTopicCB, this, _1), trees_upd_sub_options);
+    
+    // Wait for tree to be loaded (check first execution status msg at  uids_to_tree_info_.at(msg->uid).tree_status) 
+    // Check with a condition variable if a certain max_time is set greater than 0, otherwise just say is started without waiting...
+
+    // Wait for tree to be loaded (checking first execution status message)
+    const int max_wait_time_ms = (req->max_load_timeout_ms > 0) ? req->max_load_timeout_ms : 5000;  // 5 seconds maximum wait time as default one
+
+    if (max_wait_time_ms > 0) 
+    {
+      RCLCPP_INFO(node_->get_logger(), "Waiting up to %d ms for tree %s to load...", 
+                max_wait_time_ms, tree_name.c_str());
+    
+      std::unique_lock<std::mutex> lock(new_process_info.loading_mutex);
+      bool success = new_process_info.loading_cv.wait_for(lock, std::chrono::milliseconds(max_wait_time_ms),
+                                                            [&new_process_info]() { 
+                                                              return new_process_info.tree_status.status != TreeStatus::LOADING; 
+                                                            });
+    
+      if (success) 
+      {
+        RCLCPP_INFO(node_->get_logger(), "Tree %s loaded successfully with UID %u", 
+                    tree_name.c_str(), res->tree_uid);
+        res->instantiated = true;
+      } 
+      else 
+      {
+        RCLCPP_WARN(node_->get_logger(), "Timeout waiting for tree %s to load, but process started with UID %u", 
+                    tree_name.c_str(), res->tree_uid);
+      }
+    } 
+    else 
+    {
+      RCLCPP_INFO(node_->get_logger(), "Tree %s process started with UID %u (not waiting for load confirmation)", 
+                  tree_name.c_str(), res->tree_uid);
+    }
 
     return true;
   }
@@ -390,7 +435,7 @@ namespace BT_SERVER
     RCLCPP_DEBUG(node_->get_logger(), "Stopping tree with UID: '%u' ", req->tree_uid);
     if(uids_to_tree_info_.find(req->tree_uid) != uids_to_tree_info_.end())
     {
-        TreeProcessInfo tree_info = uids_to_tree_info_.at(req->tree_uid);
+        const TreeProcessInfo& tree_info = uids_to_tree_info_.at(req->tree_uid);
         bool result = handleCallEmptySrv("/"+tree_info.tree_name+ "/stop_tree");
         RCLCPP_INFO(node_->get_logger(), "Stopping tree with UID: '%u' done ", req->tree_uid);
         return result;
@@ -437,7 +482,7 @@ namespace BT_SERVER
 
   bool BehaviorTreeServer::killAllTrees(const bool force_kill)
   {
-    for (auto tree_info : uids_to_tree_info_)
+    for (auto& tree_info : uids_to_tree_info_)
     {
       if(!tree_info.second.killed)
         killTree(tree_info.first, force_kill);
@@ -463,8 +508,8 @@ namespace BT_SERVER
     RCLCPP_DEBUG(node_->get_logger(), "Restarting Tree with UID: '%u' ", req->tree_uid);
     if(uids_to_tree_info_.find(req->tree_uid) != uids_to_tree_info_.end())
     {
-        TreeProcessInfo tree_info = uids_to_tree_info_.at(req->tree_uid);
-        return handleCallEmptySrv("/"+tree_info.tree_name+ "/restart_tree");
+      const TreeProcessInfo& tree_info = uids_to_tree_info_.at(req->tree_uid);
+      return handleCallEmptySrv("/"+tree_info.tree_name+ "/restart_tree");
     }
     else
     {
@@ -478,17 +523,16 @@ namespace BT_SERVER
     RCLCPP_DEBUG(node_->get_logger(), "Pausing tree with UID: '%u' ", req->tree_uid);
     if(uids_to_tree_info_.find(req->tree_uid) != uids_to_tree_info_.end())
     {
-        TreeProcessInfo tree_info = uids_to_tree_info_.at(req->tree_uid);
-        if(handleCallTriggerSrv("/"+tree_info.tree_name+ "/pause_tree"))
-        {
-          RCLCPP_INFO(node_->get_logger(), "Paused tree with UID: '%u' done ", req->tree_uid);
-          return true;
-        }
-        else
-        {
-          RCLCPP_ERROR(node_->get_logger(), "Failed to Pause with UID: '%u'. Service could not process the request", req->tree_uid);
-        }
-
+      const TreeProcessInfo& tree_info = uids_to_tree_info_.at(req->tree_uid);
+      if(handleCallTriggerSrv("/"+tree_info.tree_name+ "/pause_tree"))
+      {
+        RCLCPP_INFO(node_->get_logger(), "Paused tree with UID: '%u' done ", req->tree_uid);
+        return true;
+      }
+      else
+      {
+        RCLCPP_ERROR(node_->get_logger(), "Failed to Pause with UID: '%u'. Service could not process the request", req->tree_uid);
+      }
     }
     else
     {
@@ -502,16 +546,16 @@ namespace BT_SERVER
     RCLCPP_DEBUG(node_->get_logger(), "Resuming tree with UID: '%u' ", req->tree_uid);
     if(uids_to_tree_info_.find(req->tree_uid) != uids_to_tree_info_.end())
     {
-        TreeProcessInfo tree_info = uids_to_tree_info_.at(req->tree_uid);
-        if(handleCallTriggerSrv("/"+tree_info.tree_name+ "/resume_tree"))
-        {
-          RCLCPP_INFO(node_->get_logger(), "Resumed tree with UID: '%u' done ", req->tree_uid);
-          return true;
-        }
-        else
-        {
-          RCLCPP_ERROR(node_->get_logger(), "Failed to Resumed with UID: '%u'. Service could not process the request", req->tree_uid);
-        }
+      const TreeProcessInfo& tree_info = uids_to_tree_info_.at(req->tree_uid);
+      if(handleCallTriggerSrv("/"+tree_info.tree_name+ "/resume_tree"))
+      {
+        RCLCPP_INFO(node_->get_logger(), "Resumed tree with UID: '%u' done ", req->tree_uid);
+        return true;
+      }
+      else
+      {
+        RCLCPP_ERROR(node_->get_logger(), "Failed to Resumed with UID: '%u'. Service could not process the request", req->tree_uid);
+      }
     }
     else
     {
@@ -559,7 +603,7 @@ namespace BT_SERVER
   
   bool BehaviorTreeServer::getAllTreeStatusCB(const std::shared_ptr<GetAllTreeStatusSrv::Request> req, std::shared_ptr<GetAllTreeStatusSrv::Response> res)
   {
-    for (auto tree_info : uids_to_tree_info_)
+    for (const auto& tree_info : uids_to_tree_info_)
     {
       res->status.push_back(tree_info.second.tree_status);
     }
@@ -568,7 +612,22 @@ namespace BT_SERVER
 
   void BehaviorTreeServer::treeStatusTopicCB(const TreeStatus::SharedPtr msg)   
   {
-      uids_to_tree_info_.at(msg->uid).tree_status = *msg;
+    auto& tree_info = uids_to_tree_info_.at(msg->uid);
+
+    // If the tree was loading and now has a different status, it means it's loaded
+    bool tree_loaded_now = (tree_info.tree_status.status == TreeStatus::LOADING && msg->status != TreeStatus::LOADING);
+    bool alert_tree_status_upd = tree_loaded_now; // can add others ucses later
+
+    // Update tree info 
+    uids_to_tree_info_.at(msg->uid).tree_status = *msg;
+    
+    if(alert_tree_status_upd)
+    {
+      RCLCPP_INFO(node_->get_logger(), "Tree %s with UID %u loaded", tree_info.tree_name.c_str(), msg->uid);
+      // Notify the condition variable to wake up any waiting threads
+      std::unique_lock<std::mutex> lock(tree_info.loading_mutex);
+      tree_info.loading_cv.notify_all();
+    }
   }
 
   void BehaviorTreeServer::initBB(const std::string& abs_file_path, BT::Blackboard::Ptr blackboard_ptr)

@@ -1,6 +1,10 @@
 #ifndef BEHAVIORTREE_SERVER_HPP
 #define BEHAVIORTREE_SERVER_HPP
 
+// Add these includes if not already present
+#include <mutex>
+#include <condition_variable>
+
 #include "rclcpp/rclcpp.hpp"
 
 #include "std_srvs/srv/empty.hpp"
@@ -50,16 +54,27 @@ namespace BT_SERVER
   class TreeProcessInfo
   {
     public:
-      TreeProcessInfo(std::string in_tree_name, pid_t in_pid)
+      TreeProcessInfo(const std::string& in_tree_name, pid_t in_pid, const uint8_t current_exec_status=TreeStatus::UNKNOWN) :
+        tree_name(in_tree_name),
+        pid(in_pid)
       {
-          tree_name = in_tree_name;
-          pid = in_pid;
           killed = false;
+          tree_status = TreeStatus{};
+          tree_status.name = in_tree_name;
+          tree_status.status = current_exec_status;
       };
-      pid_t pid;
-      std::string tree_name;
-      TreeStatus tree_status;
+
+
+      // Make these explicitly deleted to prevent accidental copying
+      TreeProcessInfo(const TreeProcessInfo&) = delete;
+      TreeProcessInfo& operator=(const TreeProcessInfo&) = delete;
+
+      const pid_t pid;
+      const std::string tree_name;
+      TreeStatus tree_status; // extend tree status with LOADING
       bool killed;
+      std::mutex loading_mutex;  // Mutex for the condition variable
+      std::condition_variable loading_cv;  // Condition variable to wait for loading
       rclcpp::Subscription<TreeStatus>::SharedPtr status_subscriber;
   };
   class BehaviorTreeServer
@@ -146,7 +161,9 @@ namespace BT_SERVER
       //Sync BB
       BT::Blackboard::Ptr sync_blackboard_ptr_;
 
-      
+      // trees update execution status
+      rclcpp::CallbackGroup::SharedPtr trees_upd_cb_group_;
+
       //Save Spawned Trees information
       std::map <unsigned int, TreeProcessInfo> uids_to_tree_info_;
       

@@ -161,7 +161,7 @@ namespace BT_SERVER
 
   void TreeWrapper::initStatusPublisher()
   {
-      bt_execution_status_publisher_ = node_->create_publisher<TreeStatus>("/"+tree_name_+"/execution_status", 100);
+      bt_execution_status_publisher_ = node_->create_publisher<TreeStatus>("/"+tree_name_+"/execution_status", 100); // create it with latch last msg
   }
 
 
@@ -557,7 +557,8 @@ namespace BT_SERVER
     }
     else
     {
-        throw BT::RuntimeError("Failed to open the file: "+full_path );
+      tree_ptr_.reset();
+      throw BT::RuntimeError("Failed to open the file: "+full_path );
     }
 
     //Add the syncKeys to the syncMap

@@ -4,5 +4,8 @@ bool auto_restart
 uint32 publisher_port
 uint32 server_port
 string[] bb_init_files
+uint32 max_load_timeout_ms
 ---
 uint8 tree_uid
+bool started
+bool instantiated
