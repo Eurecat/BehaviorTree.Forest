@@ -93,7 +93,7 @@ namespace BT_SERVER
       RCLCPP_INFO(node_->get_logger(),"Creating tree from file %s", full_path.c_str());
       tree_wrapper_.createTree(full_path,tree_debug_);
     }
-    catch(const std::runtime_error& ex)
+    catch(const BT::RuntimeError& ex)
     {
       RCLCPP_ERROR(node_->get_logger(),"Error loading tree %s: %s", full_path.c_str(), ex.what());
 
@@ -423,7 +423,14 @@ namespace BT_SERVER
   void BehaviorTreeNode::run()
   {
     if(tree_wrapper_.isTreeLoaded())
+    {
+      RCLCPP_DEBUG(node_->get_logger(),"Tree %s loaded: behavior tree node will begin to tick the tree now", tree_wrapper_.tree_name_.c_str());
       executor_.spin();
+    }
+    else
+    {
+      RCLCPP_ERROR(node_->get_logger(),"Tree %s could not be loaded: behavior tree node will terminate", tree_wrapper_.tree_name_.c_str());
+    }
   }
 }
 
