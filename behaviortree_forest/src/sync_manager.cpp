@@ -5,6 +5,37 @@ using std::placeholders::_1;
 
 namespace BT_SERVER
 {
+    BT::Expected<BBEntry> SyncManager::buildBBEntryMsg(const std::string& bb_key, const BT::Blackboard::Ptr blackboard_ptr)
+    {
+      if(blackboard_ptr)
+      {
+        const std::shared_ptr<BT::Blackboard::Entry> entry_check_ptr = blackboard_ptr->getEntry(bb_key);  
+        if(entry_check_ptr)
+        {
+          BBEntry bb_entry_msg;
+          bb_entry_msg.key = bb_key;
+          bb_entry_msg.type = BT::demangle(entry_check_ptr->info.type());
+          auto val = BT::EutUtils::eutToJsonString(bb_key, blackboard_ptr);
+          if (val.has_value())
+          {
+            bb_entry_msg.value = val.value();
+            bb_entry_msg.sender_sequence_id = entry_check_ptr->sequence_id;
+          }
+          else
+          {
+            bb_entry_msg.value = "";
+            bb_entry_msg.sender_sequence_id = 0;
+          }
+          return bb_entry_msg;
+        }
+        else
+        {
+          return nonstd::make_unexpected(BT::StrCat("Entry with key ", bb_key, " does not exist in the blackboard"));
+        }
+      }
+      return nonstd::make_unexpected(BT::StrCat("Blackboard pointer is null"));
+    }
+
     SyncManager::SyncManager(const rclcpp::Node::SharedPtr& node, BT::Blackboard::Ptr blackboard, const std::string& bt_uid, const BT::EutBehaviorTreeFactory& eut_bt_factory)
     : node_(node), blackboard_(blackboard), bt_uid_(bt_uid), eut_bt_factory_(eut_bt_factory)
     {
@@ -129,19 +160,11 @@ namespace BT_SERVER
       BBEntries bb_entries_msg;
       for(const auto& ser_entry : getKeysValueToSync())
       {
-          const std::shared_ptr<BT::Blackboard::Entry> entry_check_ptr = blackboard_->getEntry(ser_entry.first);  
-          if(entry_check_ptr)
+          BT::Expected<BBEntry> message_opt = buildBBEntryMsg(ser_entry.first, blackboard_);
+          if(message_opt)
           {
-              BBEntry message;
-              message.key = ser_entry.first;
-              message.type = BT::demangle(entry_check_ptr->info.type());
-              auto val = BT::EutUtils::eutToJsonString(ser_entry.first, blackboard_);
-              if (val.has_value())
-                  message.value = val.value();
-              else
-                  message.value = "";
+              BBEntry& message = message_opt.value();
               message.bt_id = bt_uid_;
-              message.sender_sequence_id = entry_check_ptr->sequence_id;
               //RCLCPP_INFO(nh_->get_logger(),"KnowledgeManager Adding ToPubEntry -> KEY: %s TYPE: %s VAL: %s", message.key.c_str(), message.type.c_str(), message.value.c_str());
                    
               if(updateSyncMapEntrySyncStatus(ser_entry.first, SyncStatus::TO_SYNC, SyncStatus::SYNCING) || hasSyncStatus(ser_entry.first,SyncStatus::SYNCING))
@@ -166,7 +189,7 @@ namespace BT_SERVER
         processSyncEntryUpdate(sync_entry_upd);
     }
 
-    bool SyncManager::processSyncEntryUpdate(const BBEntry& sync_entry_upd)
+    bool SyncManager::processSyncEntryUpdate(const BBEntry& sync_entry_upd, const bool to_sync)
     {
       // std::string remote_entry_type_str = sync_entry_upd.type.rfind("nlohmann::json", 0) == std::string::npos ? sync_entry_upd.type : "json" ;
       RCLCPP_DEBUG(this->node_->get_logger(), "[SyncManager]::syncBBUpdateCB\tkey=%s,\tvalue=%s,\ttype=%s\n", 
@@ -358,8 +381,10 @@ namespace BT_SERVER
           if(sync_entry_upd.sender_sequence_id < checked_sync_entry.value().entry->sequence_id)  // This is supposed to be the ACK for the sync sent by this tree and it's an old one, so the variable cannot be considered synced (yet)
             return false; // do not update the status, it is not yet synced
         }
-        
-        if (updateSyncMapEntrySyncStatus(sync_entry_upd.key, SyncStatus::SYNCED))  // being it yours or from another tree, mark it as synced
+
+        if(to_sync && sync_entry_upd.bt_id != bt_uid_) 
+          update_successful = updateSyncMapEntrySyncStatus(sync_entry_upd.key, SyncStatus::TO_SYNC); // comes from someone else that is asking us to trigger the sync
+        else if (updateSyncMapEntrySyncStatus(sync_entry_upd.key, SyncStatus::SYNCED))  // being it yours or from another tree, mark it as synced
           update_successful = true;
         else 
           RCLCPP_ERROR(this->node_->get_logger(),"[SyncManager %s]::syncBBUpdateCB Key [%s] failed to set status value [SYNCED]", 

@@ -1,0 +1,5 @@
+string capability
+BBEntry[] reset_entries
+---
+bool success
+string details

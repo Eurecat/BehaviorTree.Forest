@@ -24,6 +24,7 @@ namespace BT_SERVER
     stop_tree_srv_ = node_->create_service<EmptySrv>("/"+tree_name_+"/stop_tree",std::bind(&BehaviorTreeNode::stopTreeCB,this,_1,_2), rclcpp::QoS(rclcpp::ServicesQoS()), srv_cb_group_);
     kill_tree_srv_ = node_->create_service<EmptySrv>("/"+tree_name_+"/kill_tree",std::bind(&BehaviorTreeNode::killTreeCB,this,_1,_2), rclcpp::QoS(rclcpp::ServicesQoS()), srv_cb_group_);
     restart_tree_srv_ = node_->create_service<EmptySrv>("/"+tree_name_+"/restart_tree",std::bind(&BehaviorTreeNode::restartTreeCB,this,_1,_2), rclcpp::QoS(rclcpp::ServicesQoS()), srv_cb_group_);
+    restart_advanced_srv_ = node_->create_service<TreeRestartAdvancedSrv>("/"+tree_name_+"/restart_tree_advanced",std::bind(&BehaviorTreeNode::restartTreeAdvancedCB,this,_1,_2), rclcpp::QoS(rclcpp::ServicesQoS()), srv_cb_group_);
     get_tree_status_srv_ = node_->create_service<GetTreeStatusSrv>("/"+tree_name_+"/status_tree",std::bind(&BehaviorTreeNode::statusTreeCB,this,_1,_2), rclcpp::QoS(rclcpp::ServicesQoS()), srv_cb_group_);
 
 
@@ -232,15 +233,20 @@ namespace BT_SERVER
       { 
           try
           {
-              const auto tree_status = tree_wrapper_.tickTree(); 
-              RCLCPP_DEBUG(node_->get_logger(),"TICK ONCE %s OK", tree_wrapper_.tree_name_.c_str());
+              const auto tree_status_prev = tree_wrapper_.getTreeExecutionStatus();
+              auto tree_status = tree_status_prev;
+              {
+                std::scoped_lock lock{tree_sync_lock_};  // protect this blok from conflicting actions, i.e. tree restart
+                tree_status = tree_wrapper_.tickTree(); 
+                RCLCPP_DEBUG(node_->get_logger(),"TICK ONCE %s OK", tree_wrapper_.tree_name_.c_str());
 
-              // tree_wrapper_.refreshSyncMap(); 
+                // tree_wrapper_.refreshSyncMap(); 
 
-              sendBlackboardUpdates(tree_wrapper_.getKeysValueToSync());
-              
+                sendBlackboardUpdates(tree_wrapper_.getKeysValueToSync()); // check still that the loop should be active after the tick, before sharing updates
+              }
+
               // Publish the updated status if there have been changes.
-              if(tree_status != tree_wrapper_.getTreeExecutionStatus())
+              if(tree_status != tree_status_prev)
               {
                   tree_wrapper_.updatePublishTreeExecutionStatus(tree_status);
               }
@@ -258,6 +264,14 @@ namespace BT_SERVER
               }
           }
           catch(const BT::BehaviorTreeException& ex)
+          {
+              std::string error_str = "ERROR: Tree crashed with BT exception [ " + std::string(ex.what()) + " ]";
+              RCLCPP_ERROR(node_->get_logger(),"Tree crashed with BT exception: %s", ex.what());
+              tree_wrapper_.execution_tree_error_ = ex.what() ;
+              tree_wrapper_.publishExecutionStatus(true, error_str);
+              removeTree();
+          }
+          catch(const std::exception& ex)
           {
               std::string error_str = "ERROR: Tree crashed with exception [ " + std::string(ex.what()) + " ]";
               RCLCPP_ERROR(node_->get_logger(),"Tree crashed with exception: %s", ex.what());
@@ -294,7 +308,8 @@ namespace BT_SERVER
   {
     if(tree_wrapper_.isTreeLoaded())
     {
-        removeTree();
+      loop_timer_->cancel();
+      removeTree();
     }
     tree_wrapper_.setExecuted(true);
     return true;
@@ -339,14 +354,49 @@ namespace BT_SERVER
   {
     RCLCPP_DEBUG(node_->get_logger(),"restartTreeCB for tree %s", tree_wrapper_.tree_name_.c_str());
     if (tree_wrapper_.isTreeLoaded())
-    {
-      tree_wrapper_.resetTree();
+    {    
+      std::scoped_lock lock{tree_sync_lock_};  // protect this blok from conflicting actions, i.e. tree tick
+      // First cancel the loop timer to prevent race conditions
+      loop_timer_->cancel();
 
+      tree_wrapper_.resetTree();
       tree_wrapper_.setExecuted(false);
+
+      // Restart the timer after everything is reset
+      loop_timer_->reset();
       return true;
     }
     return false;
   }
+
+
+  bool BehaviorTreeNode::restartTreeAdvancedCB(const std::shared_ptr<TreeRestartAdvancedSrv::Request> _request, std::shared_ptr<TreeRestartAdvancedSrv::Response> _response)
+  {
+    RCLCPP_DEBUG(node_->get_logger(),"restartTreeAdvancedCB for tree %s", tree_wrapper_.tree_name_.c_str());
+    if (tree_wrapper_.isTreeLoaded())
+    {    
+      std::scoped_lock lock{tree_sync_lock_};  // protect this blok from conflicting actions, i.e. tree tick
+      // First cancel the loop timer to prevent race conditions
+      loop_timer_->cancel();
+
+      // tree_wrapper_.debug_tree_ptr->debugResume(BT::DebuggableTree::ExecMode::DEBUG_STEP); // just to debug
+      tree_wrapper_.resetTree();
+      tree_wrapper_.setExecuted(false);
+
+      // Restart the tree with the new reset entries
+      tree_wrapper_.syncBBUpdateCB(_request->reset_entries, true); // force the tree to trigger the sync update 
+      // sendBlackboardUpdates
+
+      // Restart the timer after everything is reset
+      loop_timer_->reset();
+
+      _response->success = true;
+      _response->details = "Tree restarted with new reset entries";
+      return true;
+    }
+    return false;
+  }
+
   bool BehaviorTreeNode::statusTreeCB(const std::shared_ptr<GetTreeStatusSrv::Request> _request, std::shared_ptr<GetTreeStatusSrv::Response> _response)
   {
     RCLCPP_DEBUG(node_->get_logger(),"statusTreeCB for tree %s", tree_wrapper_.tree_name_.c_str());

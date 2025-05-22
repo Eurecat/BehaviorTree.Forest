@@ -1,4 +1,4 @@
-uint32 tree_uid
+BBEntry[] reset_entries
 ---
 bool success
 string details

@@ -1,4 +1,4 @@
-uint8 uid
+uint32 uid
 string name
 string model
 string prev_status

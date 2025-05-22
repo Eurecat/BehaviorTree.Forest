@@ -165,17 +165,17 @@ namespace BT_SERVER
   }
 
 
-  void TreeWrapper::syncBBUpdateCB(const std::vector<BBEntry>& _bulk_upd)
+  void TreeWrapper::syncBBUpdateCB(const std::vector<BBEntry>& _bulk_upd, const bool to_sync)
   {
       for(const auto& upd : _bulk_upd)
-          syncBBUpdateCB(upd);
+          syncBBUpdateCB(upd, to_sync);
   }
 
-  void TreeWrapper::syncBBUpdateCB(const BBEntry& _single_upd)
+  void TreeWrapper::syncBBUpdateCB(const BBEntry& _single_upd, const bool to_sync)
   {
       //Check that the tree is loaded
       if(!isTreeLoaded()) return;
-      sync_manager_->processSyncEntryUpdate(_single_upd);
+      sync_manager_->processSyncEntryUpdate(_single_upd, to_sync);
 
       return;
       /*
@@ -479,6 +479,8 @@ namespace BT_SERVER
           initBBFromFile(bb_init_abs_filepath);init_bb_counter++;
       }
     }
+    BT::Blackboard::Ptr copy_bb = BT::Blackboard::create(); 
+    copy_bb = root_blackboard_;
   }
   
   void TreeWrapper::initBBFromFile(const std::string& abs_file_path)

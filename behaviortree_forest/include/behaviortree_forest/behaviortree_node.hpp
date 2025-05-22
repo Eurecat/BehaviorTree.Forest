@@ -3,6 +3,10 @@
 
 #include "rclcpp/rclcpp.hpp"
 
+#include <string>
+#include <memory>
+#include <mutex>
+
 #include "behaviortree_forest/utils.hpp"
 #include "behaviortree_forest/tree_wrapper.hpp"
 
@@ -13,6 +17,7 @@
 #include "behaviortree_forest_interfaces/msg/bb_entries.hpp"
 #include "behaviortree_forest_interfaces/srv/get_loaded_plugins.hpp"
 #include "behaviortree_forest_interfaces/srv/get_bb_values.hpp"
+#include "behaviortree_forest_interfaces/srv/tree_restart_advanced.hpp"
 
 #include "behaviortree_cpp/blackboard.h"
 
@@ -25,6 +30,7 @@ using GetLoadedPluginsSrv = behaviortree_forest_interfaces::srv::GetLoadedPlugin
 using GetTreeStatusSrv = behaviortree_forest_interfaces::srv::GetTreeStatus;
 using GetBBValues = behaviortree_forest_interfaces::srv::GetBBValues;
 using TriggerSrv = std_srvs::srv::Trigger;
+using TreeRestartAdvancedSrv = behaviortree_forest_interfaces::srv::TreeRestartAdvanced;
 using EmptySrv = std_srvs::srv::Empty;
 
 namespace BT_SERVER
@@ -50,6 +56,7 @@ namespace BT_SERVER
       bool pauseTreeCB(const std::shared_ptr<TriggerSrv::Request> _request, std::shared_ptr<TriggerSrv::Response> _response);
       bool resumeTreeCB(const std::shared_ptr<TriggerSrv::Request> _request, std::shared_ptr<TriggerSrv::Response> _response);
       bool restartTreeCB(const std::shared_ptr<EmptySrv::Request> _request, std::shared_ptr<EmptySrv::Response> _response);
+      bool restartTreeAdvancedCB(const std::shared_ptr<TreeRestartAdvancedSrv::Request> _request, std::shared_ptr<TreeRestartAdvancedSrv::Response> _response);
       bool statusTreeCB(const std::shared_ptr<GetTreeStatusSrv::Request> _request, std::shared_ptr<GetTreeStatusSrv::Response> _response);
       void checkPausedCB();
 
@@ -77,6 +84,7 @@ namespace BT_SERVER
       rclcpp::Service<EmptySrv>::SharedPtr stop_tree_srv_;
       rclcpp::Service<EmptySrv>::SharedPtr kill_tree_srv_;
       rclcpp::Service<EmptySrv>::SharedPtr restart_tree_srv_;
+      rclcpp::Service<TreeRestartAdvancedSrv>::SharedPtr restart_advanced_srv_;
       rclcpp::Service<TriggerSrv>::SharedPtr pause_tree_srv_;
       rclcpp::Service<TriggerSrv>::SharedPtr resume_tree_srv_;
       rclcpp::Service<GetTreeStatusSrv>::SharedPtr get_tree_status_srv_;
@@ -87,6 +95,8 @@ namespace BT_SERVER
       //Timers
       rclcpp::TimerBase::SharedPtr check_paused_timer_; 
       rclcpp::TimerBase::SharedPtr loop_timer_; 
+
+      std::mutex tree_sync_lock_;
   };
 }
 

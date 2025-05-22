@@ -8,7 +8,7 @@ uint8 LOADING = 6
 uint8 CRASHED = 7
 uint8 UNKNOWN = 8
 
-uint8 uid
+uint32 uid
 string name
 builtin_interfaces/Time time_start
 builtin_interfaces/Time time

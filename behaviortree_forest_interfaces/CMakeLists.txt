@@ -19,6 +19,8 @@ rosidl_generate_interfaces(behaviortree_forest_interfaces
     "srv/GetTreeStatusByID.srv"
     "srv/LoadTree.srv"
     "srv/TreeRequest.srv"
+    "srv/TreeRequestByCapability.srv"
+    "srv/TreeRestartAdvanced.srv"
     "srv/GetLoadedPlugins.srv"
     DEPENDENCIES builtin_interfaces)
 

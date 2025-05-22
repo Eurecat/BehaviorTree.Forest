@@ -5,8 +5,15 @@
 #include "behaviortree_forest/params/behaviortree_server_params.hpp"
 #include "behaviortree_eut_plugins/utils/eut_utils.h"
 
+#include "behaviortree_forest_interfaces/srv/tree_restart_advanced.hpp"
+
+#include "behaviortree_forest/sync_manager.hpp"
+
 namespace BT_SERVER
 {
+
+  using TreeRestartAdvancedSrv = behaviortree_forest_interfaces::srv::TreeRestartAdvanced;
+
   BehaviorTreeServer::BehaviorTreeServer(const rclcpp::Node::SharedPtr& node) : 
     node_(node), 
     eut_bt_factory_(BT::EutBehaviorTreeFactory(std::make_shared<BT::BehaviorTreeFactory>())),
@@ -31,6 +38,7 @@ namespace BT_SERVER
     kill_tree_srv_ = node_->create_service<TreeRequestSrv>("behavior_tree_forest/kill_tree",std::bind(&BehaviorTreeServer::killTreeCB,this,_1,_2));
     kill_all_trees_srv_ = node_->create_service<EmptySrv>("behavior_tree_forest/kill_all_trees",std::bind(&BehaviorTreeServer::killAllTreesCB,this,_1,_2));
     restart_tree_srv_  = node_->create_service<TreeRequestSrv>("behavior_tree_forest/restart_tree",std::bind(&BehaviorTreeServer::restartTreeCB,this,_1,_2));
+    restart_tree_by_capability_srv_  = node_->create_service<TreeRequestByCapabilitySrv>("behavior_tree_forest/restart_trees_by_capability",std::bind(&BehaviorTreeServer::restartTreeByCapabilityCB,this,_1,_2));
     pause_tree_srv_ = node_->create_service<TreeRequestSrv>("behavior_tree_forest/pause_tree",std::bind(&BehaviorTreeServer::pauseTreeCB,this,_1,_2));
     resume_tree_srv_ = node_->create_service<TreeRequestSrv>("behavior_tree_forest/resume_tree",std::bind(&BehaviorTreeServer::resumeTreeCB,this,_1,_2));    
     get_sync_bb_values_srv_ = node_->create_service<GetBBValuesSrv>("behavior_tree_forest/get_sync_bb_values",std::bind(&BehaviorTreeServer::getSyncBBValuesCB,this,_1,_2));
@@ -219,15 +227,13 @@ namespace BT_SERVER
     BBEntries entries;
     for (const auto& entry : msg.entries)
     {
-      BBEntry upd_msg;
-      upd_msg.key = entry.key;
-      upd_msg.type = sync_blackboard_ptr_->getEntry(entry.key)->info.typeName();
-      auto val = BT::EutUtils::eutToJsonString(entry.key, sync_blackboard_ptr_);
-      upd_msg.value = val.value_or("");
-      upd_msg.bt_id = entry.bt_id;
-      upd_msg.sender_sequence_id = entry.sender_sequence_id;
-      if(val.has_value())
+      BT::Expected<BBEntry> entry_opt = SyncManager::buildBBEntryMsg(entry.key, sync_blackboard_ptr_);
+      if(entry_opt)
+      {
+        BBEntry& upd_msg = entry_opt.value();
+        upd_msg.bt_id = entry.bt_id;
         entries.entries.push_back(upd_msg);
+      }
     }
     sync_bb_pub_->publish(entries);
   }
@@ -413,6 +419,9 @@ namespace BT_SERVER
                   tree_name.c_str(), res->tree_uid);
     }
 
+    if(!req->deployed_capability.empty()) // if capability is not empty, add to the map the capability -> uid map (remember that a capability can be deployed through different trees running in parallel)
+      capability_to_uids_map_[req->deployed_capability].insert(res->tree_uid);
+
     return true;
   }
 
@@ -438,16 +447,19 @@ namespace BT_SERVER
         const TreeProcessInfo& tree_info = uids_to_tree_info_.at(req->tree_uid);
         bool result = handleCallEmptySrv("/"+tree_info.tree_name+ "/stop_tree");
         RCLCPP_INFO(node_->get_logger(), "Stopping tree with UID: '%u' done ", req->tree_uid);
+        res->success = result;
+        res->details = "Stopping tree with UID: "+std::to_string(req->tree_uid)+" done";
         return result;
     }
     else
     {
       RCLCPP_ERROR(node_->get_logger(), "Failed to Stop tree: UID %u does not exist", req->tree_uid);
+      res->details = "Stopping tree with UID: " + std::to_string(req->tree_uid) + " failed";
     }
-    return false;
+    return true;
   }
 
-  bool BehaviorTreeServer::killTree(const uint8_t tree_uid, const bool force_kill)
+  bool BehaviorTreeServer::killTree(const uint32_t tree_uid, const bool force_kill)
   {
     if(uids_to_tree_info_.find(tree_uid) != uids_to_tree_info_.end())
     {
@@ -473,6 +485,13 @@ namespace BT_SERVER
           // else
           //   RCLCPP_ERROR(node_->get_logger(), "Failed to kill process with PIDs %s & %s",std::to_string(tree_info.pid).c_str(), std::to_string(bt_node_pid).c_str());
 
+          // remove it from the capability_to_uids_map_
+          for(auto& it : capability_to_uids_map_)
+          {
+            auto& uids = it.second;
+            uids.erase(tree_uid);
+          }
+          
           return resultcmd != -1;
         }
     }
@@ -493,7 +512,13 @@ namespace BT_SERVER
   bool BehaviorTreeServer::killTreeCB(const std::shared_ptr<TreeRequestSrv::Request> req, std::shared_ptr<TreeRequestSrv::Response> res)
   {
     RCLCPP_INFO(node_->get_logger(), "Killing tree with UID: '%u' ", req->tree_uid);
-    return killTree(req->tree_uid, false);
+    bool success = killTree(req->tree_uid, false);
+    res->success = success;
+    if(success)
+      res->details = "Killing tree with UID: "+std::to_string(req->tree_uid)+" done";
+    else
+      res->details = "Killing tree with UID: "+std::to_string(req->tree_uid)+" failed";
+    return true;
   }
 
   bool BehaviorTreeServer::killAllTreesCB(const std::shared_ptr<EmptySrv::Request> req, std::shared_ptr<EmptySrv::Response> res)
@@ -503,19 +528,71 @@ namespace BT_SERVER
     return true;
   }
 
+
+  bool BehaviorTreeServer::restartTreeByCapabilityCB(const std::shared_ptr<TreeRequestByCapabilitySrv::Request> req, std::shared_ptr<TreeRequestByCapabilitySrv::Response> res)
+  {
+    RCLCPP_DEBUG(node_->get_logger(), "Restarting Trees with capability: '%s' ", req->capability.c_str());
+    if(capability_to_uids_map_.find(req->capability) != capability_to_uids_map_.end())
+    {
+      const auto& uids = capability_to_uids_map_.at(req->capability);
+      for (const auto& uid : uids)
+      {
+        const TreeProcessInfo& tree_info = uids_to_tree_info_.at(uid);
+        // req->reset_entries;
+        TreeRestartAdvancedSrv::Request restart_advanced_req;
+        restart_advanced_req.reset_entries = req->reset_entries;
+        const auto response = handleSyncSrvCall<TreeRestartAdvancedSrv>("/"+tree_info.tree_name+ "/restart_tree_advanced", restart_advanced_req);
+        res->success = response.second == rclcpp::FutureReturnCode::SUCCESS && response.first && response.first->success; // Indicate that the service was received and successfully processed;
+        if(res->success)
+        {
+          RCLCPP_INFO(node_->get_logger(), "Restarted tree with UID: '%u' done ", uid);
+          res->details += "Restarted tree with UID: "+std::to_string(uid)+" done, ";
+        }
+        else
+        {
+          // std::cout << "Failed to Restart with UID: '%u'. Service could not process the request nullptr? " << (response.first == nullptr) << " success? " << std::to_string(response.first && response.first->success) << uid;
+          RCLCPP_ERROR(node_->get_logger(), "Failed to Restart with UID: '%u'. Service could not process the request", uid);
+          res->details += "Failed to Restart with UID: "+std::to_string(uid)+". Service could not process the request, ";
+        }
+      }
+      return true;
+    }
+    else
+    {
+      RCLCPP_ERROR(node_->get_logger(), "Failed to restart tree: Capability %s does not exist", req->capability.c_str());
+      res->success = false;
+      res->details = "Failed to Restart tree: Capability "+req->capability+" does not exist";
+    }
+    return true;
+  }
+
   bool BehaviorTreeServer::restartTreeCB(const std::shared_ptr<TreeRequestSrv::Request> req, std::shared_ptr<TreeRequestSrv::Response> res)
   {
     RCLCPP_DEBUG(node_->get_logger(), "Restarting Tree with UID: '%u' ", req->tree_uid);
     if(uids_to_tree_info_.find(req->tree_uid) != uids_to_tree_info_.end())
     {
       const TreeProcessInfo& tree_info = uids_to_tree_info_.at(req->tree_uid);
-      return handleCallEmptySrv("/"+tree_info.tree_name+ "/restart_tree");
+      bool success = handleCallEmptySrv("/"+tree_info.tree_name+ "/restart_tree");
+      res->success = success;
+      if(success)
+      {
+        RCLCPP_INFO(node_->get_logger(), "Restarted tree with UID: '%u' done ", req->tree_uid);
+        res->details = "Restarted tree with UID: "+std::to_string(req->tree_uid)+" done";
+      }
+      else
+      {
+        RCLCPP_ERROR(node_->get_logger(), "Failed to Restart with UID: '%u'. Service could not process the request", req->tree_uid);
+        res->details = "Failed to Restart with UID: "+std::to_string(req->tree_uid)+". Service could not process the request";
+      }
+      return success;
     }
     else
     {
       RCLCPP_ERROR(node_->get_logger(), "Failed to restart tree: UID %u does not exist", req->tree_uid);
+      res->success = false;
+      res->details = "Failed to Restart tree: UID "+std::to_string(req->tree_uid)+" does not exist";
     }
-    return false;
+    return true;
   }
 
   bool BehaviorTreeServer::pauseTreeCB(const std::shared_ptr<TreeRequestSrv::Request> req, std::shared_ptr<TreeRequestSrv::Response> res)
@@ -527,18 +604,24 @@ namespace BT_SERVER
       if(handleCallTriggerSrv("/"+tree_info.tree_name+ "/pause_tree"))
       {
         RCLCPP_INFO(node_->get_logger(), "Paused tree with UID: '%u' done ", req->tree_uid);
+        res->success = true;
+        res->details = "Paused tree with UID: "+std::to_string(req->tree_uid)+" done";
         return true;
       }
       else
       {
         RCLCPP_ERROR(node_->get_logger(), "Failed to Pause with UID: '%u'. Service could not process the request", req->tree_uid);
+        res->success = false;
+        res->details = "Failed to Pause with UID: "+std::to_string(req->tree_uid)+". Service could not process the request";
       }
     }
     else
     {
       RCLCPP_ERROR(node_->get_logger(), "Failed to Pause tree: UID %u does not exist", req->tree_uid);
+      res->success = false;
+      res->details = "Failed to Pause tree: UID "+std::to_string(req->tree_uid)+" does not exist";
     }
-    return false;
+    return true;
   }
 
   bool BehaviorTreeServer::resumeTreeCB(const std::shared_ptr<TreeRequestSrv::Request> req, std::shared_ptr<TreeRequestSrv::Response> res)
@@ -550,37 +633,40 @@ namespace BT_SERVER
       if(handleCallTriggerSrv("/"+tree_info.tree_name+ "/resume_tree"))
       {
         RCLCPP_INFO(node_->get_logger(), "Resumed tree with UID: '%u' done ", req->tree_uid);
+        res->success = true;
+        res->details = "Resumed tree with UID: "+std::to_string(req->tree_uid)+" done";
         return true;
       }
       else
       {
         RCLCPP_ERROR(node_->get_logger(), "Failed to Resumed with UID: '%u'. Service could not process the request", req->tree_uid);
+        res->success = false;
+        res->details = "Failed to Resume with UID: "+std::to_string(req->tree_uid)+". Service could not process the request";
       }
     }
     else
     {
       RCLCPP_ERROR(node_->get_logger(), "Failed to Resume tree: UID %u does not exist", req->tree_uid);
+      res->success = false;
+      res->details = "Failed to Resume with UID: "+std::to_string(req->tree_uid)+". UID does not exist";
     }
-    return false;
+    return true;
   }
 
   bool BehaviorTreeServer::getSyncBBValuesCB (const std::shared_ptr<GetBBValuesSrv::Request> req, std::shared_ptr<GetBBValuesSrv::Response> res)
   {
     for (auto key : req->keys)
     {
-      auto bb_entry_str = BT::EutUtils::eutToJsonString(key, sync_blackboard_ptr_);
-      if(bb_entry_str.has_value())
+      BT::Expected<BBEntry> bb_entry_opt = SyncManager::buildBBEntryMsg(key, sync_blackboard_ptr_);
+      if(bb_entry_opt)
       {
-          BBEntry bb_entry;
-          bb_entry.key = key;
-          bb_entry.type = BT::demangle(sync_blackboard_ptr_->getEntry(key)->info.type()); //sync_blackboard_ptr_->getEntry(key)->info.typeName();
-          bb_entry.value = bb_entry_str.value();
+          BBEntry& bb_entry = bb_entry_opt.value();
           bb_entry.bt_id = ""; //Empty BT_ID for BTServer requests
           res->entries.push_back(bb_entry);
       }
       else
       {
-        RCLCPP_WARN(node_->get_logger(), "Error fetching PortValue: %s  for port %s ", bb_entry_str.error().c_str(), key.c_str());
+        RCLCPP_WARN(node_->get_logger(), "Error fetching PortValue: %s  for port %s ", bb_entry_opt.error().c_str(), key.c_str());
       }
     }
     return true;

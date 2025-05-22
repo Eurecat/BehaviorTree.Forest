@@ -28,7 +28,8 @@ endforeach()
 
 
 add_executable(behaviortree_server
-    src/behaviortree_server.cpp )
+    src/behaviortree_server.cpp
+    src/sync_manager.cpp )
 ament_target_dependencies(behaviortree_server ${THIS_PACKAGE_DEPS})
 
 target_include_directories(behaviortree_server PUBLIC

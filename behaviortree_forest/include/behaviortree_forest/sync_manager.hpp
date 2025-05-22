@@ -38,11 +38,14 @@ namespace BT_SERVER
         
 
         void syncBBUpdateCB(const BBEntries::SharedPtr sync_entries_upd_msg);
-        bool processSyncEntryUpdate(const BBEntry& sync_entry_upd);
+        bool processSyncEntryUpdate(const BBEntry& sync_entry_upd, const bool to_sync=false);
 
         /// @brief Publish sync entries that have been updated and are in TO_SYNC or SYNCING and have not ack yet
         /// @return 
         void publishUpdatedSyncEntries();
+
+        static BT::Expected<BBEntry> buildBBEntryMsg(const std::string& bb_key, const BT::Blackboard::Ptr blackboard_ptr);
+
     private:
         void refreshSyncMap();
         rclcpp::Node::SharedPtr node_;

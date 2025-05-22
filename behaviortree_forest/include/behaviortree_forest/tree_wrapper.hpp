@@ -72,8 +72,8 @@ namespace BT_SERVER
     // TODO: Check if tree is Paused
     bool isTreePaused() { return isTreeLoaded() && debug_tree_ptr->isPaused(); }
 
-    void syncBBUpdateCB(const BBEntry& _single_upd);
-    void syncBBUpdateCB(const std::vector<BBEntry>& _bulk_upd);
+    void syncBBUpdateCB(const BBEntry& _single_upd, const bool to_sync=false);
+    void syncBBUpdateCB(const std::vector<BBEntry>& _bulk_upd, const bool to_sync=false);
 
     SyncMap getKeysValueToSync ();
     
