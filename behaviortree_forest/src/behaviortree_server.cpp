@@ -81,7 +81,7 @@ namespace BT_SERVER
   bool BehaviorTreeServer::syncBB(const BBEntry& msg) const
   {
     // std::string remote_entry_type_str = msg.type.rfind("nlohmann::json", 0) == std::string::npos ? msg.type : "json" ;
-    RCLCPP_INFO(node_->get_logger(), "RX Sync Update from [%s]. Key: '%s' Type: '%s' Value: '%s'", msg.bt_id.c_str(), msg.key.c_str(), BT::polishedTypeName(msg.type).c_str(), msg.value.c_str());
+    RCLCPP_DEBUG(node_->get_logger(), "RX Sync Update from [%s]. Key: '%s' Type: '%s' Value: '%s'", msg.bt_id.c_str(), msg.key.c_str(), BT::polishedTypeName(msg.type).c_str(), msg.value.c_str());
 
     if(sync_blackboard_ptr_)
     {
