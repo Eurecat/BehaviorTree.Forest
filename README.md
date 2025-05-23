@@ -2,8 +2,8 @@
 
 This repository takes leverage of the following repositories
 - [behaviortree_cpp (v 4.6.2)](https://github.com/BehaviorTree/BehaviorTree.CPP/tree/4.6.2)
-- [behaviortree_eut_plugins](https://ice.eurecat.org/gitlab/robotics-automation/behavior_tree_eut_plugins)
-- [behaviortree_ros2](https://ice.eurecat.org/gitlab/robotics-automation/behavior_tree_ros.git)
+- [behaviortree_eut_plugins](https://github.com/Eurecat/behaviortree_eut_plugins.git)
+- [behaviortree_ros2](https://github.com/Eurecat/behaviortree_ros2.git)
 
 In particular, it provides the infrastructure to implement:
 - a server capable of maintaining some sync entries in a centralized storage
