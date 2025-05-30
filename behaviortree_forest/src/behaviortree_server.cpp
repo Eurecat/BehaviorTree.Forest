@@ -224,6 +224,12 @@ namespace BT_SERVER
 
   void BehaviorTreeServer::republishUpdatedSyncEntries(const BBEntries& msg) const
   {
+    if(msg.entries.empty())
+    {
+      RCLCPP_DEBUG(node_->get_logger(), "No Sync Entries to republish");
+      return;
+    }
+    
     BBEntries entries;
     for (const auto& entry : msg.entries)
     {
