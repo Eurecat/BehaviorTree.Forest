@@ -456,7 +456,7 @@ namespace BT_SERVER
       }
 
       bt_server::Params bt_params;
-      bt_params.ros_plugins_timeout = 5000;
+      bt_params.ros_plugins_timeout = 16000; //TODO shall be decrease: for now will just help to understand what is happening
       bt_params.plugins = ros_plugin_directories_;
       RegisterPlugins(bt_params, eut_bt_factory_.originalFactory(), node_);
       eut_bt_factory_.updateTypeInfoMap();
