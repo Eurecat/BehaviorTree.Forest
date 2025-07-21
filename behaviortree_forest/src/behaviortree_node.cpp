@@ -269,7 +269,14 @@ namespace BT_SERVER
               RCLCPP_ERROR(node_->get_logger(),"Tree crashed with BT exception: %s", ex.what());
               tree_wrapper_.execution_tree_error_ = ex.what() ;
               tree_wrapper_.publishExecutionStatus(true, error_str);
-              removeTree();
+              if(!tree_auto_restart_)
+                removeTree();
+              else
+              {
+                // If auto restart is true, reset the tree to allow it to be restarted
+                tree_wrapper_.resetTree();
+                tree_wrapper_.setExecuted(false);
+              }
           }
           catch(const std::exception& ex)
           {
@@ -277,7 +284,14 @@ namespace BT_SERVER
               RCLCPP_ERROR(node_->get_logger(),"Tree crashed with exception: %s", ex.what());
               tree_wrapper_.execution_tree_error_ = ex.what() ;
               tree_wrapper_.publishExecutionStatus(true, error_str);
-              removeTree();
+              if(!tree_auto_restart_)
+                removeTree();
+              else
+              {
+                // If auto restart is true, reset the tree to allow it to be restarted
+                tree_wrapper_.resetTree();
+                tree_wrapper_.setExecuted(false);
+              }
           }
       }
       else
