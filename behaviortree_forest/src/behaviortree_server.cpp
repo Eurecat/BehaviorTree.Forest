@@ -140,7 +140,7 @@ namespace BT_SERVER
         else
         {
           // CASE D (case C directly treated above)
-          const nlohmann::json json_value = nlohmann::json::parse(msg.value);
+          const nlohmann::json json_value = (msg.value.empty())? nlohmann::json{} : nlohmann::json::parse(msg.value);
           RCLCPP_DEBUG(node_->get_logger(),"Sync port in SERVER BB for key [%s] with value parsed to json [%s] : type of parsed json [%s]", msg.key.c_str(), json_value.dump().c_str(), json_value.type_name());
           
           const BT::JsonExporter::ExpectedEntry expected_entry = BT::EutUtils::eutFromJson(json_value, entry_ptr->info.type());
