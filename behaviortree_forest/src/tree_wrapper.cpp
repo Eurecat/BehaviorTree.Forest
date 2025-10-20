@@ -376,6 +376,7 @@ namespace BT_SERVER
     {
       try
       {
+        std::cout << "CIAOCIAO\n" << std::flush;
         bt_logger_zmq_ = std::make_unique<BT::PublisherZMQ>(*debug_tree_ptr, 25, tree_publisher_port_,tree_server_port_);
       }
       catch (const std::exception& ex)
