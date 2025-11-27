@@ -7,6 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(THIS_PACKAGE_DEPS
     rclcpp
     rclcpp_action
+    rclcpp_lifecycle
     ament_index_cpp
     std_srvs
     behaviortree_cpp
@@ -29,6 +30,7 @@ endforeach()
 
 add_executable(behaviortree_server
     src/behaviortree_server.cpp
+    src/sync_manager_base.cpp
     src/sync_manager.cpp )
 ament_target_dependencies(behaviortree_server ${THIS_PACKAGE_DEPS})
 
@@ -42,6 +44,7 @@ add_executable(behaviortree_node
     src/behaviortree_node.cpp 
     src/tree_wrapper.cpp
     src/bt_transition_logger.cpp
+    src/sync_manager_base.cpp
     src/sync_manager.cpp)
 
 
@@ -55,7 +58,9 @@ target_link_libraries(behaviortree_node yaml-cpp Boost::filesystem)
 
 
 add_library(behaviortree_forest_lib
+    src/sync_manager_base.cpp
     src/sync_manager.cpp
+    src/lifecycle_sync_manager.cpp
 )
 target_include_directories(behaviortree_forest_lib PUBLIC
       $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>

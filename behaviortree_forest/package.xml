@@ -17,6 +17,7 @@
 
   <depend>rclcpp</depend>
   <depend>rclcpp_action</depend>
+  <depend>rclcpp_lifecycle</depend>
   <depend>std_srvs</depend>
   <depend>behaviortree_cpp</depend>
   <depend>generate_parameter_library</depend>
