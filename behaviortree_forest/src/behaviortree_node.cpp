@@ -20,12 +20,21 @@ namespace BT_SERVER
     
     tree_wrapper_.initSyncManager();
 
+#if RCLCPP_VERSION_MAJOR >= 21  // Iron, Jazzy and later
     get_loaded_plugins_srv_ =node->create_service<GetLoadedPluginsSrv>("/"+tree_name_+"/get_loaded_plugins",std::bind(&BehaviorTreeNode::getLoadedPluginsCB,this,_1,_2), rclcpp::QoS(rclcpp::ServicesQoS()), srv_cb_group_);
     stop_tree_srv_ = node_->create_service<EmptySrv>("/"+tree_name_+"/stop_tree",std::bind(&BehaviorTreeNode::stopTreeCB,this,_1,_2), rclcpp::QoS(rclcpp::ServicesQoS()), srv_cb_group_);
     kill_tree_srv_ = node_->create_service<EmptySrv>("/"+tree_name_+"/kill_tree",std::bind(&BehaviorTreeNode::killTreeCB,this,_1,_2), rclcpp::QoS(rclcpp::ServicesQoS()), srv_cb_group_);
     restart_tree_srv_ = node_->create_service<EmptySrv>("/"+tree_name_+"/restart_tree",std::bind(&BehaviorTreeNode::restartTreeCB,this,_1,_2), rclcpp::QoS(rclcpp::ServicesQoS()), srv_cb_group_);
     restart_advanced_srv_ = node_->create_service<TreeRestartAdvancedSrv>("/"+tree_name_+"/restart_tree_advanced",std::bind(&BehaviorTreeNode::restartTreeAdvancedCB,this,_1,_2), rclcpp::QoS(rclcpp::ServicesQoS()), srv_cb_group_);
     get_tree_status_srv_ = node_->create_service<GetTreeStatusSrv>("/"+tree_name_+"/status_tree",std::bind(&BehaviorTreeNode::statusTreeCB,this,_1,_2), rclcpp::QoS(rclcpp::ServicesQoS()), srv_cb_group_);
+#else  // Humble
+    get_loaded_plugins_srv_ =node->create_service<GetLoadedPluginsSrv>("/"+tree_name_+"/get_loaded_plugins",std::bind(&BehaviorTreeNode::getLoadedPluginsCB,this,_1,_2));
+    stop_tree_srv_ = node_->create_service<EmptySrv>("/"+tree_name_+"/stop_tree",std::bind(&BehaviorTreeNode::stopTreeCB,this,_1,_2));
+    kill_tree_srv_ = node_->create_service<EmptySrv>("/"+tree_name_+"/kill_tree",std::bind(&BehaviorTreeNode::killTreeCB,this,_1,_2));
+    restart_tree_srv_ = node_->create_service<EmptySrv>("/"+tree_name_+"/restart_tree",std::bind(&BehaviorTreeNode::restartTreeCB,this,_1,_2));
+    restart_advanced_srv_ = node_->create_service<TreeRestartAdvancedSrv>("/"+tree_name_+"/restart_tree_advanced",std::bind(&BehaviorTreeNode::restartTreeAdvancedCB,this,_1,_2));
+    get_tree_status_srv_ = node_->create_service<GetTreeStatusSrv>("/"+tree_name_+"/status_tree",std::bind(&BehaviorTreeNode::statusTreeCB,this,_1,_2));
+#endif
 
 
         // Define the subscription options
@@ -71,8 +80,13 @@ namespace BT_SERVER
     // Publish Paused Status Timer
     if (tree_debug_)
     {
+#if RCLCPP_VERSION_MAJOR >= 21  // Iron, Jazzy and later
       pause_tree_srv_  = node->create_service<TriggerSrv>("/"+tree_name_+"/pause_tree", std::bind(&BehaviorTreeNode::pauseTreeCB,this,_1,_2),rclcpp::QoS(rclcpp::ServicesQoS()), srv_cb_group_);
       resume_tree_srv_  = node->create_service<TriggerSrv>("/"+tree_name_+"/resume_tree", std::bind(&BehaviorTreeNode::resumeTreeCB,this,_1,_2),rclcpp::QoS(rclcpp::ServicesQoS()), srv_cb_group_);
+#else  // Humble
+      pause_tree_srv_  = node->create_service<TriggerSrv>("/"+tree_name_+"/pause_tree", std::bind(&BehaviorTreeNode::pauseTreeCB,this,_1,_2));
+      resume_tree_srv_  = node->create_service<TriggerSrv>("/"+tree_name_+"/resume_tree", std::bind(&BehaviorTreeNode::resumeTreeCB,this,_1,_2));
+#endif
       check_paused_timer_ = node_->create_wall_timer(std::chrono::milliseconds(1000/loop_rate_), std::bind(&BehaviorTreeNode::checkPausedCB,this));
     }
 
