@@ -43,6 +43,8 @@ namespace BT_SERVER
 
         bool processSyncEntryUpdate(const BBEntry& sync_entry_upd, const bool to_sync=false);
 
+        void updateBlackboard(BT::Blackboard::Ptr blackboard);
+        
         const BBEntries getSyncEntriesToPublish();
 
         static BT::Expected<BBEntry> buildBBEntryMsg(const std::string& bb_key, const BT::Blackboard::Ptr blackboard_ptr);

@@ -46,6 +46,32 @@ namespace BT_SERVER
     
     SyncManagerBase::~SyncManagerBase() {}
 
+    void SyncManagerBase::updateBlackboard(BT::Blackboard::Ptr blackboard)
+    {
+      if(!blackboard)
+      {
+        if(ros_logger_)
+        {
+          RCLCPP_ERROR(*ros_logger_, "SyncManagerBase::updateBlackboard failed: provided blackboard pointer is null");
+        }
+        return;
+      }
+      
+      // CRITICAL: When switching to a new blackboard, clear syncMap_
+      // The old syncMap_ entries hold shared_ptr<Entry> to the OLD blackboard's entries
+      // which are destroyed when the old blackboard is reset. Keeping them would cause
+      // dangling pointers and memory corruption.
+      // 
+      // After clearing, CreateSyncBB() shall be called to repopulate syncMap_ with entries from the NEW blackboard.
+      {
+        std::scoped_lock lock{syncMap_lock_};
+        syncMap_.clear();
+      }
+      
+      // Update the blackboard pointer (used when reconfiguring for multi-cycle operation)
+      blackboard_ = blackboard;
+    }
+
     std::vector<std::string> SyncManagerBase::getSyncKeysList()
     {
       // Always make sure you are treating a consistent sync map
