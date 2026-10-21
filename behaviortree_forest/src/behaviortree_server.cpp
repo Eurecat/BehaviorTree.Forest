@@ -9,6 +9,8 @@
 
 #include "behaviortree_forest/sync_manager.hpp"
 
+#include <rclcpp/version.h>  // RCLCPP_VERSION_MAJOR, for the create_service overload below
+
 namespace BT_SERVER
 {
 
@@ -41,7 +43,13 @@ namespace BT_SERVER
     restart_tree_by_capability_srv_  = node_->create_service<TreeRequestByCapabilitySrv>("behavior_tree_forest/restart_trees_by_capability",std::bind(&BehaviorTreeServer::restartTreeByCapabilityCB,this,_1,_2));
     pause_tree_srv_ = node_->create_service<TreeRequestSrv>("behavior_tree_forest/pause_tree",std::bind(&BehaviorTreeServer::pauseTreeCB,this,_1,_2));
     resume_tree_srv_ = node_->create_service<TreeRequestSrv>("behavior_tree_forest/resume_tree",std::bind(&BehaviorTreeServer::resumeTreeCB,this,_1,_2));    
-    get_sync_bb_values_srv_ = node_->create_service<GetBBValuesSrv>("behavior_tree_forest/get_sync_bb_values",std::bind(&BehaviorTreeServer::getSyncBBValuesCB,this,_1,_2));
+    // A loading tree calls get_sync_bb_values before it reports loaded, while loadTreeCB holds the default group
+    sync_bb_cb_group_ = node_->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+#if RCLCPP_VERSION_MAJOR >= 21  // Iron, Jazzy and later
+    get_sync_bb_values_srv_ = node_->create_service<GetBBValuesSrv>("behavior_tree_forest/get_sync_bb_values",std::bind(&BehaviorTreeServer::getSyncBBValuesCB,this,_1,_2),rclcpp::QoS(rclcpp::ServicesQoS()), sync_bb_cb_group_);
+#else  // Humble
+    get_sync_bb_values_srv_ = node_->create_service<GetBBValuesSrv>("behavior_tree_forest/get_sync_bb_values",std::bind(&BehaviorTreeServer::getSyncBBValuesCB,this,_1,_2),rmw_qos_profile_services_default, sync_bb_cb_group_);
+#endif
     get_tree_status_srv_ = node_->create_service<GetTreeStatusSrv>("behavior_tree_forest/get_tree_status",std::bind(&BehaviorTreeServer::getTreeStatusCB,this,_1,_2));
     get_all_trees_status_srv_ = node_->create_service<GetAllTreeStatusSrv>("behavior_tree_forest/get_all_trees_status",std::bind(&BehaviorTreeServer::getAllTreeStatusCB,this,_1,_2));
     
@@ -54,7 +62,9 @@ namespace BT_SERVER
     if(sync_bb_init_file.length() > 0) { initBB(sync_bb_init_file, sync_blackboard_ptr_); }
 
     //Updates subscriber server side
-    sync_bb_sub_ = node_->create_subscription<BBEntries>("behavior_tree_forest/local_update", 10, std::bind(&BehaviorTreeServer::syncBBCB, this, _1)) ;
+    rclcpp::SubscriptionOptions sync_bb_sub_options;
+    sync_bb_sub_options.callback_group = sync_bb_cb_group_; // with get_sync_bb_values: both use the sync BB
+    sync_bb_sub_ = node_->create_subscription<BBEntries>("behavior_tree_forest/local_update", 10, std::bind(&BehaviorTreeServer::syncBBCB, this, _1), sync_bb_sub_options) ;
     
     //Updates republisher for all trees (put latch to true atm, because seems a good option that you receive last update from the server)
     sync_bb_pub_ = node_->create_publisher<BBEntries>("behavior_tree_forest/broadcast_update", 10);
@@ -415,6 +425,7 @@ namespace BT_SERVER
       } 
       else 
       {
+        new_process_info.load_wait_ended = true;  // still under loading_mutex: treeStatusTopicCB reports a later load as late
         RCLCPP_WARN(node_->get_logger(), "Timeout waiting for tree %s to load, but process started with UID %u", 
                     tree_name.c_str(), res->tree_uid);
       }
@@ -470,10 +481,13 @@ namespace BT_SERVER
     if(uids_to_tree_info_.find(tree_uid) != uids_to_tree_info_.end())
     {
         TreeProcessInfo& tree_info = uids_to_tree_info_.at(tree_uid);
-        if (!tree_info.killed && handleCallEmptySrv("/"+tree_info.tree_name+ "/kill_tree") || force_kill)
+        if (!tree_info.killed || force_kill)
         {
           if(force_kill)
             RCLCPP_INFO(node_->get_logger(), "Force killing tree with uid %d", tree_uid);
+          else if(!handleCallEmptySrv("/"+tree_info.tree_name+ "/kill_tree"))
+            // e.g. a tree still loading: it advertises kill_tree before it spins, so it can't answer
+            RCLCPP_WARN(node_->get_logger(), "Tree with uid %d did not answer kill_tree; killing its process anyway", tree_uid);
 
           //Extract extra PIDs created when executing "ros2 run ..." with fork()
           pid_t bt_node_pid = ros2_launch_manager_.extract_bt_node_pid_from_python_pid(tree_info.pid);
@@ -715,9 +729,12 @@ namespace BT_SERVER
     
     if(alert_tree_status_upd)
     {
-      RCLCPP_INFO(node_->get_logger(), "Tree %s with UID %u loaded", tree_info.tree_name.c_str(), msg->uid);
       // Notify the condition variable to wake up any waiting threads
       std::unique_lock<std::mutex> lock(tree_info.loading_mutex);
+      if(tree_info.load_wait_ended)
+        RCLCPP_INFO(node_->get_logger(), "Tree %s with UID %u loaded late, after its load_tree wait ended", tree_info.tree_name.c_str(), msg->uid);
+      else
+        RCLCPP_INFO(node_->get_logger(), "Tree %s with UID %u loaded", tree_info.tree_name.c_str(), msg->uid);
       tree_info.loading_cv.notify_all();
     }
   }

@@ -82,6 +82,7 @@ namespace BT_SERVER
       bool killed;
       std::mutex loading_mutex;  // Mutex for the condition variable
       std::condition_variable loading_cv;  // Condition variable to wait for loading
+      bool load_wait_ended = false;  // loadTreeCB stopped waiting before the tree loaded (guarded by loading_mutex)
       rclcpp::Subscription<TreeStatus>::SharedPtr status_subscriber;
   };
   class BehaviorTreeServer
@@ -119,7 +120,8 @@ namespace BT_SERVER
       // This is a workaround to avoid creating a new node for each service call
       // It is not the best practice, but it works for now
       template<typename T>
-      std::pair<std::shared_ptr<typename T::Response>, rclcpp::FutureReturnCode> handleSyncSrvCall(const std::string& service_name, const typename T::Request& request = typename T::Request())
+      std::pair<std::shared_ptr<typename T::Response>, rclcpp::FutureReturnCode> handleSyncSrvCall(const std::string& service_name, const typename T::Request& request = typename T::Request(),
+                                                                                                   const std::chrono::milliseconds timeout = std::chrono::seconds(5))
       {
         const auto bad_request = std::make_pair(nullptr, rclcpp::FutureReturnCode::INTERRUPTED);
         if (!rclcpp::ok())  // ✅ Ensure ROS is still running before creating a node
@@ -142,7 +144,8 @@ namespace BT_SERVER
         // Create the request for the Empty service you want to call
         auto trigger_request = std::make_shared<typename T::Request>(request);
         auto future = service_client->async_send_request(trigger_request);
-        rclcpp::FutureReturnCode ret_code = rclcpp::spin_until_future_complete(client_node, future);
+        // Bounded: a tree advertises its services before it spins, so a tree that is still loading never answers
+        rclcpp::FutureReturnCode ret_code = rclcpp::spin_until_future_complete(client_node, future, timeout);
         std::string future_return_code = ret_code == rclcpp::FutureReturnCode::TIMEOUT ? "FutureReturnCode::TIMEOUT" : ret_code == rclcpp::FutureReturnCode::SUCCESS? "FutureReturnCode::SUCCESS" : "FutureReturnCode::INTEFRUPTED";
         RCLCPP_INFO(client_node->get_logger(), "Service %s called: future ret code: %s", service_name.c_str(), future_return_code.c_str());
         return std::make_pair((ret_code == rclcpp::FutureReturnCode::SUCCESS)? future.get() : nullptr, ret_code);
@@ -181,6 +184,10 @@ namespace BT_SERVER
 
       // trees update execution status
       rclcpp::CallbackGroup::SharedPtr trees_upd_cb_group_;
+
+      // sync BB sub and get_sync_bb_values: apart from the default group, where loadTreeCB waits for a tree
+      // that is itself waiting on get_sync_bb_values
+      rclcpp::CallbackGroup::SharedPtr sync_bb_cb_group_;
 
       //Save Spawned Trees information
       std::map <unsigned int, TreeProcessInfo> uids_to_tree_info_;
