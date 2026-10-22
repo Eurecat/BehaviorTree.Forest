@@ -26,7 +26,7 @@ namespace BT_SERVER
     const auto ros_plugin_directories = getBTPluginsFolders(); // pkgname/bt_plugins
 
     bt_server::Params bt_params;
-    bt_params.ros_plugins_timeout = 16000; //TODO shall be decrease: for now will just help to understand what is happening
+    bt_params.ros_plugins_timeout = 2000; // was 16000: this gated the whole capability-preemption restart chain; now a safety-net ceiling since cancels wake promptly
     bt_params.plugins = ros_plugin_directories;
 
     RegisterPlugins(bt_params, eut_bt_factory_.originalFactory(), node_);
